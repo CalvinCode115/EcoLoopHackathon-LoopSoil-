@@ -1,0 +1,67 @@
+import { OmitType, PartialType } from '@nestjs/mapped-types';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { SlotStatus } from '../../generated/prisma/client';
+
+export class CreateSlotDto {
+  @IsUUID()
+  batchId: string;
+
+  @IsDateString()
+  startTime: string;
+
+  @IsDateString()
+  endTime: string;
+
+  /** Overrides the batch's pickupLocation for this slot only. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  location?: string;
+
+  /** Max bookings in this window — the heart of the booking system (CLAUDE.md §9). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  capacity?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class UpdateSlotDto extends PartialType(
+  OmitType(CreateSlotDto, ['batchId'] as const),
+) {}
+
+export class ListSlotsQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsUUID()
+  batchId?: string;
+
+  /** Managers may filter by any status. Takers always get OPEN only. */
+  @IsOptional()
+  @IsEnum(SlotStatus)
+  status?: SlotStatus;
+
+  /** `upcoming=true` hides slots that have already ended. */
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  upcoming?: boolean;
+}

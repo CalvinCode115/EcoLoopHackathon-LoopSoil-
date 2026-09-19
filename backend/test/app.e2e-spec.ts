@@ -16,14 +16,18 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
-  });
-
   afterEach(async () => {
     await app.close();
+  });
+
+  it('/health (GET) is public', () => {
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect((res) => expect(res.body.status).toBe('ok'));
+  });
+
+  it('/auth/me (GET) requires a bearer token', () => {
+    return request(app.getHttpServer()).get('/auth/me').expect(401);
   });
 });
