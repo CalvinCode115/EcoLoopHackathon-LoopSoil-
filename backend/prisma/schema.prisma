@@ -1,0 +1,290 @@
+// LoopSoil — Prisma schema
+// SG Eco Loop Hackathon · SUSS Challenge Statement 2 (compost redistribution)
+// Stack: NestJS + Prisma + Supabase (PostgreSQL)
+//
+// Order of kg carving off a batch:  schoolReserveKg → Allocations (bulk) → Claims (public)
+// kgRemaining is DERIVED, never stored:
+//   publicPoolKg = totalKg - schoolReserveKg - sum(active Allocations)
+//   kgRemaining  = publicPoolKg - sum(PENDING + APPROVED Claims)
+// actualKg on Handover is the ONLY source of truth for diverted-kg reporting.
+
+generator client {
+  provider = "prisma-client" // Prisma 7+: replaces prisma-client-js
+  output   = "../src/generated/prisma" // relative to this file → backend/src/generated/prisma (gitignored, regenerated on install)
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7+: connection URLs are NOT set here.
+  //   DIRECT_URL   (port 5432, session mode) → prisma.config.ts `datasource.url` — migrations only
+  //   DATABASE_URL (port 6543, pooled)       → @prisma/adapter-pg in PrismaService — the running app
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  MANAGER // full admin: batches, allocations, approvals, handovers, dashboard
+  TAKER   // individual: browse, claim, book, collect
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum TakerType {
+  INDIVIDUAL // self-registers, logs in, claims from public pool
+  BULK       // manager-created record, standing monthly allocation, no login
+}
+
+enum TakerCategory {
+  NPARKS
+  TOWN_COUNCIL
+  SCHOOL
+  COMMUNITY_GARDEN
+  INDEPENDENT_FARMER
+  OTHER
+}
+
+enum TakerStatus {
+  PENDING  // registered, awaiting manager approval
+  APPROVED // cleared to claim / receive
+  SUSPENDED
+}
+
+enum BatchStatus {
+  DRAFT     // logged, not yet open to takers
+  OPEN      // public pool live, claimable
+  CLOSED    // claiming stopped (window ended or emptied)
+  COMPLETED // all handovers done, archived
+}
+
+enum ClaimStatus {
+  PENDING   // order submitted, awaiting manager decision
+  APPROVED  // approved — kg locked, amount final
+  REJECTED  // manager declined — reason required
+  CANCELLED // taker withdrew — reason required
+  COLLECTED // handed over (handover service sets this)
+}
+
+enum RejectionReason {
+  INSUFFICIENT_SUPPLY
+  HIGHER_PRIORITY
+  SLOT_UNAVAILABLE
+  INELIGIBLE_TAKER
+  OTHER
+}
+
+enum CancellationReason {
+  WRONG_AMOUNT
+  SOURCED_ELSEWHERE
+  CANNOT_MAKE_PICKUP
+  NO_LONGER_NEEDED
+  OTHER
+}
+
+enum AllocationStatus {
+  PLANNED   // manager reserved it off the batch
+  CONFIRMED // bulk taker confirmed they'll take it
+  COLLECTED // handed over
+  CANCELLED // fell through — kg releases back
+}
+
+enum SlotStatus {
+  OPEN      // published, bookable
+  CLOSED    // manager stopped taking bookings (or full)
+  CANCELLED // slot scrapped — bookings need rebooking
+}
+
+enum BookingStatus {
+  BOOKED    // reserved into the slot, occupies capacity
+  COLLECTED // showed up, handed over
+  NO_SHOW   // didn't turn up before deadline
+  CANCELLED // released before pickup — frees capacity
+}
+
+// ─────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────
+
+model User {
+  id        String     @id @default(uuid())
+  authId    String     @unique // Supabase Auth user id — the login seam
+  email     String     @unique // login identity + contact
+  phone     String? // primary contact for login users (call / WhatsApp)
+  name      String
+  role      UserRole   @default(TAKER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  taker         Taker?     @relation("UserTaker") // individual takers only
+  batchesLogged Batch[]    @relation("BatchCreatedBy")
+  takersCreated Taker[]    @relation("TakerCreatedBy") // bulk records this manager added
+  handovers     Handover[] @relation("HandoverBy")
+}
+
+model Taker {
+  id              String         @id @default(uuid())
+  name            String
+  type            TakerType
+  category        TakerCategory?
+  email           String
+  phone           String? // primary contact for BULK takers (they have no User)
+  intendedUse     String?
+  monthlyKgTarget Float? // BULK standing demand
+  status          TakerStatus    @default(PENDING)
+
+  userId String? @unique // INDIVIDUAL → links to login; null for BULK
+  user   User?   @relation("UserTaker", fields: [userId], references: [id])
+
+  createdById String? // manager who created a BULK record
+  createdBy   User?   @relation("TakerCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  claims      Claim[]
+  allocations Allocation[]
+}
+
+model Batch {
+  id              String      @id @default(uuid())
+  reference       String      @unique // human label e.g. "2026-09-A"
+  harvestDate     DateTime
+  totalKg         Float
+  schoolReserveKg Float       @default(0) // set aside for SUSS rooftop before public/bulk
+  bagSizeKg       Float? // PENDING MENTOR: standard bag size, if bagged
+  phReading       Float? // quality/trust signal (e.g. 6.9)
+  status          BatchStatus @default(DRAFT)
+  availableFrom   DateTime? // when public claiming opens
+  availableUntil  DateTime? // when claiming/collection closes
+  pickupLocation  String? // PENDING MENTOR: exact campus spot
+  notes           String?
+
+  createdById String
+  createdBy   User   @relation("BatchCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  allocations Allocation[]
+  claims      Claim[]
+  pickupSlots PickupSlot[]
+}
+
+model Allocation {
+  id        String @id @default(uuid())
+  reference String @unique // e.g. "ALC-2026-09-NParks"
+
+  batchId String
+  batch   Batch  @relation(fields: [batchId], references: [id])
+  takerId String
+  taker   Taker  @relation(fields: [takerId], references: [id])
+
+  allocatedKg Float // agreed amount, set directly by manager (no request step)
+  status      AllocationStatus @default(PLANNED)
+
+  collectedAt DateTime?
+  note        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking?
+}
+
+model Claim {
+  id        String @id @default(uuid())
+  reference String @unique // e.g. "CLM-2026-091"
+
+  batchId String
+  batch   Batch  @relation(fields: [batchId], references: [id])
+  takerId String
+  taker   Taker  @relation(fields: [takerId], references: [id])
+
+  requestedKg Float // what the taker asked for
+  approvedKg  Float? // locked amount at approval (may be < requested)
+
+  status ClaimStatus @default(PENDING)
+
+  rejectionReason    RejectionReason? // set only when REJECTED
+  cancellationReason CancellationReason? // set only when CANCELLED
+  reasonNote         String? // optional free-text for either path
+  managerNote        String? // e.g. "only 3kg avail — WhatsApp 9XXX to confirm"
+
+  submittedAt DateTime  @default(now())
+  decidedAt   DateTime? // when manager approved/rejected
+  cancelledAt DateTime? // when taker cancelled
+  collectedAt DateTime? // when handed over
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking?
+}
+
+model PickupSlot {
+  id String @id @default(uuid())
+
+  batchId String
+  batch   Batch  @relation(fields: [batchId], references: [id])
+
+  startTime DateTime
+  endTime   DateTime
+  location  String? // overrides batch.pickupLocation if set
+  capacity  Int        @default(1) // max bookings — the heart of the booking system
+  status    SlotStatus @default(OPEN)
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Booking {
+  id String @id @default(uuid())
+
+  slotId String
+  slot   PickupSlot @relation(fields: [slotId], references: [id])
+
+  // exactly one of the two is set (enforced in the backend):
+  claimId      String?     @unique
+  claim        Claim?      @relation(fields: [claimId], references: [id])
+  allocationId String?     @unique
+  allocation   Allocation? @relation(fields: [allocationId], references: [id])
+
+  status             BookingStatus @default(BOOKED)
+  collectionDeadline DateTime? // no-show cutoff (e.g. bookedAt + 2 days individual, +7 bulk); past it → auto-cancel, kg frees
+  bookedAt           DateTime      @default(now())
+  note               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  handover Handover?
+}
+
+model Handover {
+  id        String @id @default(uuid())
+  reference String @unique // e.g. "HND-2026-09-014"
+
+  bookingId String?  @unique
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  actualKg Float // NET compost, weighed before bagging (tare excluded) — the only figure summed for reporting
+  photoUrl String? // Supabase Storage — Waste Diary evidence
+
+  handedOverById String
+  handedOverBy   User     @relation("HandoverBy", fields: [handedOverById], references: [id])
+  handedOverAt   DateTime @default(now())
+
+  takerConfirmed Boolean @default(false)
+  note           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
