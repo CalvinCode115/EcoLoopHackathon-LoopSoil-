@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -30,6 +31,16 @@ export class BookingsController {
     return this.bookings.create(dto, user);
   }
 
+  /**
+   * Manager books a pickup for someone else — mainly bulk orgs, which have no login.
+   * Same rules as POST /bookings; the booking records the manager in `bookedById`.
+   */
+  @Roles(UserRole.MANAGER)
+  @Post('on-behalf')
+  createOnBehalf(@CurrentUser() user: User, @Body() dto: CreateBookingDto) {
+    return this.bookings.create(dto, user);
+  }
+
   /** Runs the collection-deadline sweep now (the cron does this every 30 min). */
   @Roles(UserRole.MANAGER)
   @Post('expire-overdue')
@@ -48,9 +59,11 @@ export class BookingsController {
     return this.bookings.getById(id, user);
   }
 
-  /** Move to another slot, or re-activate a booking whose slot was cancelled. */
-  @Post(':id/reschedule')
-  @HttpCode(HttpStatus.OK)
+  /**
+   * "Change Pickup": move to another slot, or re-activate a booking whose slot was
+   * cancelled. Atomic — on any failure (full, past cutoff) the old slot is kept.
+   */
+  @Patch(':id')
   reschedule(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,

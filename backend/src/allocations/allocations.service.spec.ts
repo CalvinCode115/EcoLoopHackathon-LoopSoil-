@@ -6,6 +6,7 @@ import { DomainException } from '../common/errors/domain.exception';
 import {
   AllocationStatus,
   BatchStatus,
+  Prisma,
   TakerCategory,
   TakerStatus,
   TakerType,
@@ -186,7 +187,7 @@ describe('AllocationsService.update', () => {
   const existing = {
     id: 'a-1',
     status: AllocationStatus.PLANNED,
-    allocatedKg: 6,
+    allocatedKg: new Prisma.Decimal(6),
     batch,
   };
 

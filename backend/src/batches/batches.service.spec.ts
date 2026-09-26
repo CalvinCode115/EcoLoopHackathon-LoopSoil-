@@ -1,7 +1,14 @@
 import { NotFoundException } from '@nestjs/common';
 import { DomainException } from '../common/errors/domain.exception';
-import { BatchStatus, UserRole, type User } from '../generated/prisma/client';
+import { toDecimal } from '../common/kg';
+import {
+  BatchStatus,
+  Prisma,
+  UserRole,
+  type User,
+} from '../generated/prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { TakersService } from '../takers/takers.service';
 import type { BatchPool, BatchPoolService } from './batch-pool.service';
 import {
   BatchesService,
@@ -27,8 +34,8 @@ function batch(overrides: Record<string, unknown> = {}) {
     id: 'b-1',
     reference: '2026-09-A',
     harvestDate: new Date('2026-09-15'),
-    totalKg: 20,
-    schoolReserveKg: 5,
+    totalKg: new Prisma.Decimal(20),
+    schoolReserveKg: new Prisma.Decimal(5),
     status: BatchStatus.DRAFT,
     availableFrom: null,
     availableUntil: null,
@@ -46,23 +53,43 @@ function setup(existing = batch()) {
         .mockImplementation(({ data }) =>
           Promise.resolve({ id: 'b-new', status: BatchStatus.DRAFT, ...data }),
         ),
-      update: jest
-        .fn()
-        .mockImplementation(({ data }) =>
-          Promise.resolve({ ...existing, ...data }),
-        ),
+      update: jest.fn().mockImplementation(({ data }) => {
+        // Simulate Prisma's atomic { increment } operator for the top-up test.
+        const resolved = { ...data };
+        if (
+          data.totalKg &&
+          typeof data.totalKg === 'object' &&
+          'increment' in data.totalKg
+        ) {
+          resolved.totalKg = toDecimal(existing.totalKg).plus(
+            data.totalKg.increment,
+          );
+        }
+        return Promise.resolve({ ...existing, ...resolved });
+      }),
       delete: jest.fn().mockResolvedValue(existing),
     },
+    batchTopUp: { create: jest.fn().mockResolvedValue({}) },
     claim: { count: jest.fn().mockResolvedValue(0) },
     allocation: { count: jest.fn().mockResolvedValue(0) },
+  };
+  // Interactive transaction: run the callback against the same mock client.
+  const prismaWithTx = {
+    ...prisma,
+    $transaction: jest.fn((fn: (tx: typeof prisma) => unknown) => fn(prisma)),
   };
   const pool = {
     forBatch: jest.fn().mockResolvedValue(emptyPool),
     forBatches: jest.fn().mockResolvedValue(new Map()),
+    allowanceLeftKgForMany: jest.fn().mockResolvedValue(new Map()),
   };
+  // No test here cares about the allowanceLeftKg value itself (that's covered in
+  // claims.service.spec.ts / batch-pool.spec.ts) — an unregistered taker keeps it null.
+  const takers = { findByUserId: jest.fn().mockResolvedValue(null) };
   const service = new BatchesService(
-    prisma as unknown as PrismaService,
+    prismaWithTx as unknown as PrismaService,
     pool as unknown as BatchPoolService,
+    takers as unknown as TakersService,
   );
   return { service, prisma, pool };
 }
@@ -172,15 +199,15 @@ describe('BatchesService visibility', () => {
 });
 
 describe('BatchesService transitions', () => {
-  it('opens a DRAFT', async () => {
+  it('publishes a DRAFT', async () => {
     const { service } = setup(batch({ status: BatchStatus.DRAFT }));
-    const result = await service.open('b-1');
+    const result = await service.publish('b-1');
     expect(result.status).toBe(BatchStatus.OPEN);
   });
 
-  it('reopens a CLOSED batch', async () => {
+  it('republishes a CLOSED batch', async () => {
     const { service } = setup(batch({ status: BatchStatus.CLOSED }));
-    expect((await service.open('b-1')).status).toBe(BatchStatus.OPEN);
+    expect((await service.publish('b-1')).status).toBe(BatchStatus.OPEN);
   });
 
   it('refuses to close a DRAFT (must be OPEN first)', async () => {
@@ -190,7 +217,7 @@ describe('BatchesService transitions', () => {
 
   it('never leaves COMPLETED', async () => {
     const { service } = setup(batch({ status: BatchStatus.COMPLETED }));
-    await expectDomainError(service.open('b-1'), 'INVALID_TRANSITION');
+    await expectDomainError(service.publish('b-1'), 'INVALID_TRANSITION');
   });
 
   it('refuses to complete while claims or allocations are still open (§13)', async () => {
@@ -227,6 +254,61 @@ describe('BatchesService.update pool guard', () => {
     await expectDomainError(
       service.update('b-1', { notes: 'x' }),
       'BATCH_COMPLETED',
+    );
+  });
+
+  it('skips the validation-preview pool read when the edit does not touch totalKg / schoolReserveKg', async () => {
+    const { service, pool } = setup(batch({ status: BatchStatus.OPEN }));
+    await service.update('b-1', { notes: 'restocked shelf' });
+    // withPool() still computes the pool once for the response — only the extra
+    // "would this shrink strand committed kg" preview read is the one being skipped.
+    expect(pool.forBatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BatchesService.topUp (Part A: weekly stock top-up)', () => {
+  it('creates the audit row and atomically increments totalKg, on a DRAFT batch', async () => {
+    const { service, prisma } = setup(batch({ status: BatchStatus.DRAFT }));
+    const result = await service.topUp(
+      'b-1',
+      { kg: 4.5, note: 'extra bin' },
+      manager,
+    );
+    expect(prisma.batchTopUp.create).toHaveBeenCalledWith({
+      data: {
+        batchId: 'b-1',
+        kg: 4.5,
+        note: 'extra bin',
+        createdById: 'mgr-1',
+      },
+    });
+    expect(prisma.batch.update).toHaveBeenCalledWith({
+      where: { id: 'b-1' },
+      data: { totalKg: { increment: 4.5 } },
+    });
+    expect(result.totalKg.toNumber()).toBe(24.5); // 20 + 4.5, exact — no float drift
+  });
+
+  it('allows top-up on an OPEN batch too', async () => {
+    const { service } = setup(batch({ status: BatchStatus.OPEN }));
+    const result = await service.topUp('b-1', { kg: 1 }, manager);
+    expect(result.totalKg.toNumber()).toBe(21);
+  });
+
+  it('refuses top-up on a CLOSED or COMPLETED batch', async () => {
+    const { service: closedService } = setup(
+      batch({ status: BatchStatus.CLOSED }),
+    );
+    await expectDomainError(
+      closedService.topUp('b-1', { kg: 1 }, manager),
+      'BATCH_NOT_TOPUPABLE',
+    );
+    const { service: completedService } = setup(
+      batch({ status: BatchStatus.COMPLETED }),
+    );
+    await expectDomainError(
+      completedService.topUp('b-1', { kg: 1 }, manager),
+      'BATCH_NOT_TOPUPABLE',
     );
   });
 });

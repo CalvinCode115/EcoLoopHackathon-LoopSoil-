@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/*
+ * LoopSoil design tokens: a single green family against white/off-white, no second
+ * hue. These are placeholder brand colors in the spirit of "SUSS green" — not verified
+ * institutional hex codes. Swap the values below when real brand guidelines are
+ * available; nothing else needs to change.
+ */
+@theme {
+  --color-canvas: #f7f8f4;
+  --color-canvas-raised: #ffffff;
+  /* A near-black with a whisper of green in it, so even "black" text belongs to the
+     same one-hue family rather than reading as a separate neutral gray. */
+  --color-ink: #0e1613;
+  --color-ink-soft: #4b5b56;
+  --color-ink-faint: #7c8985;
+
+  --color-forest-900: #0c2419;
+  --color-forest-700: #1b4332;
+  /* Darker than a "pure" brand green on purpose: this is the one locked interactive
+     accent (buttons, links, focus rings) and needs 4.5:1 against --color-canvas for
+     WCAG AA body text — verified, not eyeballed. See the dark-mode override below,
+     which uses a brighter value since it needs contrast against a dark canvas instead. */
+  --color-forest-500: #1e7a45;
+  --color-forest-300: #8fcba2;
+  --color-forest-100: #e3f2e7;
+
+  --color-line: rgba(14, 22, 19, 0.1);
+  --color-line-strong: rgba(14, 22, 19, 0.18);
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+/* Dark mode: values only, re-using the tokens registered above. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #0a120e;
+    --color-canvas-raised: #101b16;
+    --color-ink: #f4f6f2;
+    --color-ink-soft: #b9c4be;
+    --color-ink-faint: #7e8b85;
+
+    --color-forest-900: #0a2018;
+    --color-forest-700: #1e5138;
+    --color-forest-500: #3fc172;
+    --color-forest-300: #2c5c3e;
+    --color-forest-100: #12261b;
+
+    --color-line: rgba(244, 246, 242, 0.12);
+    --color-line-strong: rgba(244, 246, 242, 0.2);
+  }
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+/* Respect prefers-reduced-motion globally; components opt into motion, not out of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

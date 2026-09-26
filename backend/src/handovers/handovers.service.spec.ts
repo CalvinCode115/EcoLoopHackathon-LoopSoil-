@@ -129,7 +129,8 @@ async function expectDomainError(
 }
 
 describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
-  const dto = { bookingId: 'bk-1', actualKg: 2.8 };
+  // 1 half-kg bag + 2 one-kg bags + 0.3 loose = 2.8 kg NET, within 3kg x 1.10
+  const dto = { bookingId: 'bk-1', halfKgBags: 1, oneKgBags: 2, looseKg: 0.3 };
 
   it('creates the handover and flips booking + claim to COLLECTED inside one transaction', async () => {
     const { service, prisma, prismaWithTx } = setup();
@@ -151,7 +152,8 @@ describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
         data: expect.objectContaining({
           reference: expect.stringMatching(/^HND-\d{4}-\d{2}-005$/),
           bookingId: 'bk-1',
-          actualKg: 2.8,
+          halfKgBags: 1,
+          oneKgBags: 2,
           handedOverById: 'u-mgr',
           photoUrl: expect.stringMatching(/^2026-09-A\/bk-1-\d+\.jpg$/),
         }),
@@ -185,7 +187,7 @@ describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
         },
       }),
     });
-    const result = await service.create(dto, undefined, manager);
+    const result = await service.create(dto, photo, manager);
     expect(prisma.allocation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: AllocationStatus.COLLECTED }),
@@ -193,7 +195,6 @@ describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
     );
     expect(result.source).toBe('ALLOCATION');
     expect(result.expectedKg).toBe(6);
-    expect(result.photoUrl).toBeNull();
   });
 
   it('refuses a booking that already has a handover', async () => {
@@ -242,10 +243,41 @@ describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
     await expectDomainError(
       service.create(
         { ...dto, handedOverAt: new Date(Date.now() + 3600_000).toISOString() },
-        undefined,
+        photo,
         manager,
       ),
       'HANDOVER_IN_FUTURE',
+    );
+  });
+
+  it('requires a photo', async () => {
+    const { service, prismaWithTx } = setup();
+    await expectDomainError(
+      service.create(dto, undefined, manager),
+      'PHOTO_REQUIRED',
+    );
+    expect(prismaWithTx.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses more than 10% over the approved kg, before uploading', async () => {
+    const { service, storage } = setup();
+    // 3 + 0.5 = 3.5 kg > 3kg x 1.10 = 3.3
+    await expectDomainError(
+      service.create(
+        { bookingId: 'bk-1', oneKgBags: 3, looseKg: 0.5 },
+        photo,
+        manager,
+      ),
+      'HANDOVER_OVER_TOLERANCE',
+    );
+    expect(storage.uploadHandoverPhoto).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty breakdown', async () => {
+    const { service } = setup();
+    await expectDomainError(
+      service.create({ bookingId: 'bk-1' }, photo, manager),
+      'HANDOVER_EMPTY',
     );
   });
 
@@ -290,6 +322,7 @@ describe('HandoversService visibility + confirmation', () => {
     id: 'h-1',
     reference: 'HND-2026-09-001',
     actualKg: 2.8,
+    looseKg: 0.3,
     photoUrl: null,
     takerConfirmed: false,
     booking: collectable(),

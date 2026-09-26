@@ -3,11 +3,13 @@ import type {
   BatchPool,
   BatchPoolService,
 } from '../batches/batch-pool.service';
+import { MAX_CLAIM_KG, MIN_CLAIM_KG } from '../common/constants';
 import { DomainException } from '../common/errors/domain.exception';
 import {
   BatchStatus,
   CancellationReason,
   ClaimStatus,
+  Prisma,
   TakerStatus,
   TakerType,
   UserRole,
@@ -18,6 +20,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { TakersService } from '../takers/takers.service';
 import {
   assertBatchClaimable,
+  assertValidClaimAmount,
   ClaimsService,
   nextClaimNumber,
 } from './claims.service';
@@ -43,8 +46,8 @@ const openBatch = {
   availableUntil: null,
 } as unknown as Batch;
 
-/** §12: 20kg, reserve 5, NParks 6 → public 9; Claim A 3 pending, Claim B 2 approved → 4 left. */
-const pool4Left: BatchPool = {
+/** The BATCH's public pool has plenty left — these tests isolate the PERSONAL 1kg cap. */
+const roomyPool: BatchPool = {
   totalKg: 20,
   schoolReserveKg: 5,
   allocatedKg: 6,
@@ -57,14 +60,13 @@ const pool4Left: BatchPool = {
 function setup(
   opts: {
     pool?: BatchPool;
-    existing?: { reference: string } | null;
+    allowanceLeftKg?: number;
     claim?: Record<string, unknown> | null;
   } = {},
 ) {
   const prisma = {
     batch: { findUnique: jest.fn().mockResolvedValue(openBatch) },
     claim: {
-      findFirst: jest.fn().mockResolvedValue(opts.existing ?? null),
       findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue(opts.claim ?? null),
       create: jest
@@ -85,7 +87,10 @@ function setup(
     $transaction: jest.fn((fn: (tx: typeof prisma) => unknown) => fn(prisma)),
   };
   const pool = {
-    forBatch: jest.fn().mockResolvedValue(opts.pool ?? pool4Left),
+    forBatch: jest.fn().mockResolvedValue(opts.pool ?? roomyPool),
+    allowanceLeftKgFor: jest
+      .fn()
+      .mockResolvedValue(opts.allowanceLeftKg ?? MAX_CLAIM_KG),
   };
   const takers = {
     requireApprovedIndividual: jest.fn().mockResolvedValue(joTaker),
@@ -107,43 +112,92 @@ async function expectDomainError(
   await promise.catch((e: DomainException) => expect(e.code).toBe(code));
 }
 
-describe('ClaimsService.create — requested kg locks against the pool', () => {
+describe('assertValidClaimAmount (§D: 0.1-1kg, exact 0.1 steps)', () => {
+  it('accepts the boundaries and valid steps', () => {
+    expect(() => assertValidClaimAmount(MIN_CLAIM_KG)).not.toThrow();
+    expect(() => assertValidClaimAmount(MAX_CLAIM_KG)).not.toThrow();
+    expect(() => assertValidClaimAmount(0.6)).not.toThrow();
+  });
+
+  it('rejects below the minimum', () => {
+    expect(() => assertValidClaimAmount(0.05)).toThrow(DomainException);
+  });
+
+  it('rejects above the maximum', () => {
+    expect(() => assertValidClaimAmount(1.1)).toThrow(DomainException);
+  });
+
+  it('rejects amounts off the 0.1 step, exactly (no float false-positives)', () => {
+    expect(() => assertValidClaimAmount(0.35)).toThrow(DomainException);
+    // 0.1 + 0.2 famously isn't 0.3 in JS floats — Decimal must not inherit that noise.
+    expect(() => assertValidClaimAmount(0.3)).not.toThrow();
+    expect(() => assertValidClaimAmount(0.7)).not.toThrow();
+  });
+});
+
+describe('ClaimsService.create — allowance (personal cap) and pool checks', () => {
   it('creates a PENDING claim with a yearly sequence reference', async () => {
     const { service, prisma } = setup();
-    const claim = await service.create({ batchId: 'b-1', requestedKg: 3 }, jo);
+    const claim = await service.create(
+      { batchId: 'b-1', requestedKg: 0.6 },
+      jo,
+    );
     expect(claim.status).toBe('PENDING');
     expect(prisma.claim.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           reference: expect.stringMatching(/^CLM-\d{4}-001$/),
           takerId: 't-jo',
-          requestedKg: 3,
+          requestedKg: 0.6,
         }),
       }),
     );
   });
 
-  it('hard-blocks a request larger than kgRemaining', async () => {
+  it('rejects an invalid amount before ever touching the database', async () => {
     const { service, prisma } = setup();
     await expectDomainError(
-      service.create({ batchId: 'b-1', requestedKg: 4.5 }, jo),
+      service.create({ batchId: 'b-1', requestedKg: 0.35 }, jo),
+      'CLAIM_INVALID_STEP',
+    );
+    expect(prisma.batch.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('hard-blocks a request larger than the BATCH pool has left', async () => {
+    const { service, prisma } = setup({
+      pool: { ...roomyPool, kgRemaining: 0.5 },
+    });
+    await expectDomainError(
+      service.create({ batchId: 'b-1', requestedKg: 0.6 }, jo),
       'INSUFFICIENT_POOL',
     );
     expect(prisma.claim.create).not.toHaveBeenCalled();
   });
 
-  it('allows exactly kgRemaining', async () => {
-    const { service, prisma } = setup();
-    await service.create({ batchId: 'b-1', requestedKg: 4 }, jo);
+  it('allows exactly the pool remainder', async () => {
+    const { service, prisma } = setup({
+      pool: { ...roomyPool, kgRemaining: 0.6 },
+    });
+    await service.create({ batchId: 'b-1', requestedKg: 0.6 }, jo);
     expect(prisma.claim.create).toHaveBeenCalled();
   });
 
-  it('refuses a second live claim on the same batch', async () => {
-    const { service } = setup({ existing: { reference: 'CLM-2026-007' } });
+  it('hard-blocks when the PERSONAL per-batch allowance is exceeded, even with pool to spare', async () => {
+    // Batch pool is roomy (4kg left) but this taker has already used 0.7 of their 1kg cap.
+    const { service, prisma } = setup({ allowanceLeftKg: 0.3 });
     await expectDomainError(
-      service.create({ batchId: 'b-1', requestedKg: 1 }, jo),
-      'CLAIM_EXISTS',
+      service.create({ batchId: 'b-1', requestedKg: 0.5 }, jo),
+      'CLAIM_ALLOWANCE_EXCEEDED',
     );
+    expect(prisma.claim.create).not.toHaveBeenCalled();
+  });
+
+  it('allows several small claims on one batch as long as the running total holds (§E)', async () => {
+    // Not "one claim per batch" any more — the allowance mock represents what's left
+    // after any earlier PENDING/APPROVED/COLLECTED claims on this batch.
+    const { service, prisma } = setup({ allowanceLeftKg: 0.4 });
+    await service.create({ batchId: 'b-1', requestedKg: 0.4 }, jo);
+    expect(prisma.claim.create).toHaveBeenCalled();
   });
 
   it('is gated by taker vetting (registration + approval)', async () => {
@@ -152,7 +206,7 @@ describe('ClaimsService.create — requested kg locks against the pool', () => {
       new DomainException('TAKER_NOT_APPROVED', 'awaiting approval', 403),
     );
     await expectDomainError(
-      service.create({ batchId: 'b-1', requestedKg: 1 }, jo),
+      service.create({ batchId: 'b-1', requestedKg: 0.5 }, jo),
       'TAKER_NOT_APPROVED',
     );
   });
@@ -191,11 +245,11 @@ describe('assertBatchClaimable', () => {
   });
 });
 
-describe('ClaimsService.approve — locks approvedKg', () => {
+describe('ClaimsService.approve — locks approvedKg (Decimal-exact)', () => {
   const pending = {
     id: 'c-1',
     status: ClaimStatus.PENDING,
-    requestedKg: 3,
+    requestedKg: new Prisma.Decimal(0.6),
     managerNote: null,
     batch: openBatch,
   };
@@ -204,43 +258,43 @@ describe('ClaimsService.approve — locks approvedKg', () => {
     const { service } = setup({ claim: pending });
     const result = await service.approve('c-1', {});
     expect(result.status).toBe(ClaimStatus.APPROVED);
-    expect(result.approvedKg).toBe(3);
+    expect((result.approvedKg as Prisma.Decimal).toNumber()).toBe(0.6);
     expect(result.decidedAt).toBeInstanceOf(Date);
   });
 
   it('may approve less than requested', async () => {
     const { service } = setup({ claim: pending });
     const result = await service.approve('c-1', {
-      approvedKg: 2,
-      managerNote: 'only 2kg avail — WhatsApp 9XXX to confirm',
+      approvedKg: 0.3,
+      managerNote: 'only 0.3kg avail — WhatsApp 9XXX to confirm',
     });
-    expect(result.approvedKg).toBe(2);
+    expect((result.approvedKg as Prisma.Decimal).toNumber()).toBe(0.3);
     expect(result.managerNote).toContain('WhatsApp');
   });
 
   it('never approves more than requested', async () => {
     const { service } = setup({ claim: pending });
     await expectDomainError(
-      service.approve('c-1', { approvedKg: 3.5 }),
+      service.approve('c-1', { approvedKg: 0.7 }),
       'APPROVED_EXCEEDS_REQUESTED',
     );
   });
 
   it("counts the claim's own pending lock as available to itself", async () => {
-    // Pool says 0 left, but 3 of the locked kg is this very claim → approving 3 is fine.
+    // Pool says 0 left, but the requested 0.6 is this very claim → approving it is fine.
     const { service } = setup({
       claim: pending,
-      pool: { ...pool4Left, pendingClaimKg: 7, kgRemaining: 0 },
+      pool: { ...roomyPool, pendingClaimKg: 7, kgRemaining: 0 },
     });
     const result = await service.approve('c-1', {});
-    expect(result.approvedKg).toBe(3);
+    expect((result.approvedKg as Prisma.Decimal).toNumber()).toBe(0.6);
   });
 
   it('blocks approval when other commitments have since eaten the pool', async () => {
-    // Manager allocated more after this claim came in: remaining is −2 including our 3.
+    // Manager allocated more after this claim came in: remaining is negative including ours.
     const { service } = setup({
       claim: pending,
-      pool: { ...pool4Left, allocatedKg: 12, publicPoolKg: 3, kgRemaining: -2 },
+      pool: { ...roomyPool, allocatedKg: 12, publicPoolKg: 3, kgRemaining: -2 },
     });
     await expectDomainError(service.approve('c-1', {}), 'INSUFFICIENT_POOL');
   });
@@ -250,6 +304,57 @@ describe('ClaimsService.approve — locks approvedKg', () => {
       claim: { ...pending, status: ClaimStatus.CANCELLED },
     });
     await expectDomainError(service.approve('c-1', {}), 'INVALID_TRANSITION');
+  });
+});
+
+describe('ClaimsService.bulkApprove — partial success (§E)', () => {
+  it('approves what fits and reports the rest as skipped, without rolling back successes', async () => {
+    const { service } = setup();
+    const okClaim = {
+      id: 'c-ok',
+      status: ClaimStatus.PENDING,
+      requestedKg: new Prisma.Decimal(0.4),
+      managerNote: null,
+      batch: openBatch,
+    };
+    const badClaim = { id: 'c-bad', status: ClaimStatus.CANCELLED }; // terminal — will fail
+
+    const spy = jest
+      .spyOn(service, 'approve')
+      .mockImplementation(async (id) => {
+        if (id === 'c-ok')
+          return { ...okClaim, status: ClaimStatus.APPROVED } as never;
+        throw new DomainException(
+          'INVALID_TRANSITION',
+          'Claim cannot go from CANCELLED to APPROVED',
+        );
+      });
+
+    const result = await service.bulkApprove(['c-ok', 'c-bad', 'missing-id']);
+
+    expect(result.approved).toHaveLength(1);
+    expect(result.approved[0].id).toBe('c-ok');
+    expect(result.skipped).toEqual([
+      {
+        claimId: 'c-bad',
+        reason: 'Claim cannot go from CANCELLED to APPROVED',
+      },
+      {
+        claimId: 'missing-id',
+        reason: 'Claim cannot go from CANCELLED to APPROVED',
+      },
+    ]);
+    spy.mockRestore();
+    void badClaim; // shape reference only, not directly asserted
+  });
+
+  it('reports a not-found claim with a clear reason rather than throwing', async () => {
+    const { service } = setup({ claim: null });
+    const result = await service.bulkApprove(['missing']);
+    expect(result.approved).toHaveLength(0);
+    expect(result.skipped).toEqual([
+      { claimId: 'missing', reason: 'Claim not found' },
+    ]);
   });
 });
 

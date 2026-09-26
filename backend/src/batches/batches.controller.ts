@@ -17,6 +17,7 @@ import { UserRole, type User } from '../generated/prisma/client';
 import { BatchesService } from './batches.service';
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { ListBatchesQueryDto } from './dto/list-batches-query.dto';
+import { TopUpBatchDto } from './dto/topup-batch.dto';
 import { UpdateBatchDto } from './dto/update-batch.dto';
 
 @Controller('batches')
@@ -47,10 +48,21 @@ export class BatchesController {
   }
 
   @Roles(UserRole.MANAGER)
-  @Post(':id/open')
+  @Post(':id/topup')
   @HttpCode(HttpStatus.OK)
-  open(@Param('id', ParseUUIDPipe) id: string) {
-    return this.batches.open(id);
+  topUp(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TopUpBatchDto,
+  ) {
+    return this.batches.topUp(id, dto, user);
+  }
+
+  @Roles(UserRole.MANAGER)
+  @Post(':id/publish')
+  @HttpCode(HttpStatus.OK)
+  publish(@Param('id', ParseUUIDPipe) id: string) {
+    return this.batches.publish(id);
   }
 
   @Roles(UserRole.MANAGER)

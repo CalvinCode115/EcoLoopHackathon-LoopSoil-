@@ -171,11 +171,11 @@ export class AllocationsService {
 
       if (
         dto.allocatedKg !== undefined &&
-        dto.allocatedKg !== allocation.allocatedKg
+        !allocation.allocatedKg.equals(dto.allocatedKg)
       ) {
         const pool = await this.pool.forBatch(allocation.batch, tx);
         // Its own current amount is already counted in the pool, so it is available to itself.
-        const available = pool.kgRemaining + allocation.allocatedKg;
+        const available = pool.kgRemaining + allocation.allocatedKg.toNumber();
         assertWithinPool(
           dto.allocatedKg,
           available,

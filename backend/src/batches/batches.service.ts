@@ -3,24 +3,40 @@ import {
   assertTransition,
   DomainException,
 } from '../common/errors/domain.exception';
-import { formatKg, kgExceeds } from '../common/kg';
+import {
+  decimalExceeds,
+  formatDecimalKg,
+  formatKg,
+  kgExceeds,
+  toDecimal,
+  type DecimalValue,
+} from '../common/kg';
 import { pageArgs, paginated, type Paginated } from '../common/pagination';
 import {
   AllocationStatus,
   BatchStatus,
   ClaimStatus,
   Prisma,
+  TakerStatus,
   UserRole,
   type Batch,
   type User,
 } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TakersService } from '../takers/takers.service';
 import { BatchPoolService, type BatchPool } from './batch-pool.service';
 import type { CreateBatchDto } from './dto/create-batch.dto';
 import type { ListBatchesQueryDto } from './dto/list-batches-query.dto';
+import type { TopUpBatchDto } from './dto/topup-batch.dto';
 import type { UpdateBatchDto } from './dto/update-batch.dto';
 
-export type BatchWithPool = Batch & { pool: BatchPool };
+export type BatchWithPool = Batch & {
+  pool: BatchPool;
+  /** Backend-Updates.md §E/§F: how much of the taker's 1kg-per-batch cap is left.
+   *  Only meaningful for an APPROVED individual taker — null for managers, unregistered
+   *  or unapproved takers (they cannot claim regardless of the number). */
+  allowanceLeftKg: number | null;
+};
 
 /** DRAFT → OPEN → CLOSED → COMPLETED, with reopen. COMPLETED is terminal. */
 export const BATCH_TRANSITIONS: Record<BatchStatus, readonly BatchStatus[]> = {
@@ -35,6 +51,7 @@ export class BatchesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pool: BatchPoolService,
+    private readonly takers: TakersService,
   ) {}
 
   async create(dto: CreateBatchDto, manager: User): Promise<BatchWithPool> {
@@ -52,10 +69,10 @@ export class BatchesService {
           harvestDate,
           totalKg: dto.totalKg,
           schoolReserveKg,
-          bagSizeKg: dto.bagSizeKg,
           phReading: dto.phReading,
           availableFrom: toDate(dto.availableFrom),
           availableUntil: toDate(dto.availableUntil),
+          // Omitted → the schema default "Near bin centre / composter" applies.
           pickupLocation: dto.pickupLocation,
           notes: dto.notes,
           createdById: manager.id,
@@ -97,9 +114,19 @@ export class BatchesService {
         ...pageArgs(q),
       }),
     ]);
-    const pools = await this.pool.forBatches(batches);
+    const [pools, allowances] = await Promise.all([
+      this.pool.forBatches(batches),
+      this.allowancesFor(
+        batches.map((b) => b.id),
+        user,
+      ),
+    ]);
     return paginated(
-      batches.map((b) => ({ ...b, pool: pools.get(b.id)! })),
+      batches.map((b) => ({
+        ...b,
+        pool: pools.get(b.id)!,
+        allowanceLeftKg: allowances.get(b.id) ?? null,
+      })),
       total,
       q,
     );
@@ -110,7 +137,8 @@ export class BatchesService {
     if (user.role === UserRole.TAKER && batch.status === BatchStatus.DRAFT) {
       throw new NotFoundException('Batch not found'); // drafts are invisible to takers
     }
-    return this.withPool(batch);
+    const allowances = await this.allowancesFor([id], user);
+    return this.withPool(batch, undefined, allowances.get(id) ?? null);
   }
 
   async update(id: string, dto: UpdateBatchDto): Promise<BatchWithPool> {
@@ -123,8 +151,12 @@ export class BatchesService {
       );
     }
 
-    const totalKg = dto.totalKg ?? batch.totalKg;
-    const schoolReserveKg = dto.schoolReserveKg ?? batch.schoolReserveKg;
+    const totalKg =
+      dto.totalKg !== undefined ? toDecimal(dto.totalKg) : batch.totalKg;
+    const schoolReserveKg =
+      dto.schoolReserveKg !== undefined
+        ? toDecimal(dto.schoolReserveKg)
+        : batch.schoolReserveKg;
     assertReserve(totalKg, schoolReserveKg);
     assertWindow(
       dto.availableFrom ?? batch.availableFrom?.toISOString(),
@@ -133,8 +165,8 @@ export class BatchesService {
 
     // Shrinking the pool must never strand kg that is already allocated or claimed.
     if (
-      totalKg !== batch.totalKg ||
-      schoolReserveKg !== batch.schoolReserveKg
+      !totalKg.equals(batch.totalKg) ||
+      !schoolReserveKg.equals(batch.schoolReserveKg)
     ) {
       const preview = await this.pool.forBatch({
         id,
@@ -159,7 +191,6 @@ export class BatchesService {
         harvestDate: toDate(dto.harvestDate),
         totalKg,
         schoolReserveKg,
-        bagSizeKg: dto.bagSizeKg,
         phReading: dto.phReading,
         availableFrom: toDate(dto.availableFrom),
         availableUntil: toDate(dto.availableUntil),
@@ -170,7 +201,43 @@ export class BatchesService {
     return this.withPool(updated);
   }
 
-  open(id: string): Promise<BatchWithPool> {
+  /**
+   * Weekly stock top-up (CLAUDE.md Part A) — one transaction creates the BatchTopUp
+   * audit row AND increments Batch.totalKg, so the two can never disagree. Only while
+   * DRAFT or OPEN (Part E); a CLOSED/COMPLETED batch is done receiving stock.
+   */
+  topUp(id: string, dto: TopUpBatchDto, manager: User): Promise<BatchWithPool> {
+    return this.prisma.$transaction(async (tx) => {
+      const batch = await tx.batch.findUnique({ where: { id } });
+      if (!batch) throw new NotFoundException('Batch not found');
+      if (
+        batch.status !== BatchStatus.DRAFT &&
+        batch.status !== BatchStatus.OPEN
+      ) {
+        throw new DomainException(
+          'BATCH_NOT_TOPUPABLE',
+          `Batch ${batch.reference} is ${batch.status} — top-ups are only allowed while DRAFT or OPEN`,
+          HttpStatus.CONFLICT,
+        );
+      }
+      await tx.batchTopUp.create({
+        data: {
+          batchId: id,
+          kg: dto.kg,
+          note: dto.note,
+          createdById: manager.id,
+        },
+      });
+      const updated = await tx.batch.update({
+        where: { id },
+        data: { totalKg: { increment: dto.kg } },
+      });
+      return this.withPool(updated, tx);
+    });
+  }
+
+  /** DRAFT → OPEN: the batch becomes visible and claimable to takers. */
+  publish(id: string): Promise<BatchWithPool> {
     return this.transition(id, BatchStatus.OPEN);
   }
 
@@ -269,8 +336,36 @@ export class BatchesService {
     return batch;
   }
 
-  private async withPool(batch: Batch): Promise<BatchWithPool> {
-    return { ...batch, pool: await this.pool.forBatch(batch) };
+  /** `allowanceLeftKg` defaults to null — every manager-only call site doesn't need it. */
+  private async withPool(
+    batch: Batch,
+    tx?: Prisma.TransactionClient,
+    allowanceLeftKg: number | null = null,
+  ): Promise<BatchWithPool> {
+    return {
+      ...batch,
+      pool: await this.pool.forBatch(batch, tx),
+      allowanceLeftKg,
+    };
+  }
+
+  /** Only an APPROVED individual taker has a claim allowance; everyone else gets null. */
+  private async allowancesFor(
+    batchIds: string[],
+    user: User,
+  ): Promise<Map<string, number | null>> {
+    const result = new Map<string, number | null>(
+      batchIds.map((id) => [id, null]),
+    );
+    if (user.role !== UserRole.TAKER) return result;
+    const taker = await this.takers.findByUserId(user.id);
+    if (!taker || taker.status !== TakerStatus.APPROVED) return result;
+    const allowances = await this.pool.allowanceLeftKgForMany(
+      batchIds,
+      taker.id,
+    );
+    for (const [id, kg] of allowances) result.set(id, kg);
+    return result;
   }
 
   private async generateReference(harvestDate: Date): Promise<string> {
@@ -324,11 +419,14 @@ function indexToLetters(index: number): string {
   return out;
 }
 
-function assertReserve(totalKg: number, schoolReserveKg: number): void {
-  if (kgExceeds(schoolReserveKg, totalKg)) {
+function assertReserve(
+  totalKg: DecimalValue,
+  schoolReserveKg: DecimalValue,
+): void {
+  if (decimalExceeds(schoolReserveKg, totalKg)) {
     throw new DomainException(
       'INVALID_RESERVE',
-      `schoolReserveKg (${formatKg(schoolReserveKg)}) cannot exceed totalKg (${formatKg(totalKg)})`,
+      `schoolReserveKg (${formatDecimalKg(schoolReserveKg)}) cannot exceed totalKg (${formatDecimalKg(totalKg)})`,
     );
   }
 }

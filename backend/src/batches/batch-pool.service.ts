@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { roundKg } from '../common/kg';
+import { MAX_CLAIM_KG } from '../common/constants';
+import {
+  decimalToNumber,
+  roundDecimal,
+  toDecimal,
+  type DecimalValue,
+} from '../common/kg';
 import {
   AllocationStatus,
   ClaimStatus,
-  type Prisma,
+  Prisma,
 } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -12,6 +18,11 @@ import { PrismaService } from '../prisma/prisma.service';
  *
  *   publicPoolKg = totalKg − schoolReserveKg − allocatedKg
  *   kgRemaining  = publicPoolKg − pendingClaimKg − approvedClaimKg
+ *
+ * Fields here are plain `number` — the public shape every consumer (API responses,
+ * claims/allocations services) already expects. The summation that PRODUCES them uses
+ * genuine Prisma.Decimal arithmetic (see computePool below), which is the actual point
+ * of the Decimal migration: many small claims summed without JS float drift.
  */
 export interface BatchPool {
   totalKg: number;
@@ -41,30 +52,34 @@ export const LOCKING_CLAIM_STATUSES: readonly ClaimStatus[] = [
 ];
 
 export interface PoolSums {
-  allocatedKg: number;
-  pendingClaimKg: number;
-  approvedClaimKg: number;
+  allocatedKg: DecimalValue;
+  pendingClaimKg: DecimalValue;
+  approvedClaimKg: DecimalValue;
 }
 
-/** Pure math — unit-tested against the §12 worked example. */
+/** Pure math — unit-tested against the §12 worked example. Genuine Decimal arithmetic. */
 export function computePool(
-  totalKg: number,
-  schoolReserveKg: number,
+  totalKg: DecimalValue,
+  schoolReserveKg: DecimalValue,
   sums: PoolSums,
 ): BatchPool {
-  const allocatedKg = roundKg(sums.allocatedKg);
-  const pendingClaimKg = roundKg(sums.pendingClaimKg);
-  const approvedClaimKg = roundKg(sums.approvedClaimKg);
-  const publicPoolKg = roundKg(totalKg - schoolReserveKg - allocatedKg);
-  const kgRemaining = roundKg(publicPoolKg - pendingClaimKg - approvedClaimKg);
+  const total = toDecimal(totalKg);
+  const reserve = toDecimal(schoolReserveKg);
+  const allocatedKg = roundDecimal(sums.allocatedKg);
+  const pendingClaimKg = roundDecimal(sums.pendingClaimKg);
+  const approvedClaimKg = roundDecimal(sums.approvedClaimKg);
+  const publicPoolKg = roundDecimal(total.minus(reserve).minus(allocatedKg));
+  const kgRemaining = roundDecimal(
+    publicPoolKg.minus(pendingClaimKg).minus(approvedClaimKg),
+  );
   return {
-    totalKg: roundKg(totalKg),
-    schoolReserveKg: roundKg(schoolReserveKg),
-    allocatedKg,
-    publicPoolKg,
-    pendingClaimKg,
-    approvedClaimKg,
-    kgRemaining,
+    totalKg: decimalToNumber(total),
+    schoolReserveKg: decimalToNumber(reserve),
+    allocatedKg: allocatedKg.toNumber(),
+    publicPoolKg: publicPoolKg.toNumber(),
+    pendingClaimKg: pendingClaimKg.toNumber(),
+    approvedClaimKg: approvedClaimKg.toNumber(),
+    kgRemaining: kgRemaining.toNumber(),
   };
 }
 
@@ -97,10 +112,11 @@ export class BatchPoolService {
   ): Promise<Map<string, BatchPool>> {
     const db = tx ?? this.prisma;
     const ids = batches.map((b) => b.id);
+    const zero = new Prisma.Decimal(0);
     const sums = new Map<string, PoolSums>(
       ids.map((id) => [
         id,
-        { allocatedKg: 0, pendingClaimKg: 0, approvedClaimKg: 0 },
+        { allocatedKg: zero, pendingClaimKg: zero, approvedClaimKg: zero },
       ]),
     );
 
@@ -114,7 +130,8 @@ export class BatchPoolService {
         _sum: { allocatedKg: true },
       });
       for (const row of allocations) {
-        sums.get(row.batchId)!.allocatedKg = row._sum.allocatedKg ?? 0;
+        const s = sums.get(row.batchId)!;
+        s.allocatedKg = toDecimal(row._sum.allocatedKg ?? 0);
       }
 
       const claims = await db.claim.groupBy({
@@ -128,9 +145,13 @@ export class BatchPoolService {
       for (const row of claims) {
         const s = sums.get(row.batchId)!;
         if (row.status === ClaimStatus.PENDING) {
-          s.pendingClaimKg += row._sum.requestedKg ?? 0;
+          s.pendingClaimKg = toDecimal(s.pendingClaimKg).plus(
+            row._sum.requestedKg ?? 0,
+          );
         } else {
-          s.approvedClaimKg += row._sum.approvedKg ?? 0;
+          s.approvedClaimKg = toDecimal(s.approvedClaimKg).plus(
+            row._sum.approvedKg ?? 0,
+          );
         }
       }
     }
@@ -140,6 +161,64 @@ export class BatchPoolService {
         b.id,
         computePool(b.totalKg, b.schoolReserveKg, sums.get(b.id)!),
       ]),
+    );
+  }
+
+  /**
+   * How much of MAX_CLAIM_KG this taker has left to claim on this one batch
+   * (Backend-Updates.md §E) — a running total, not "one claim per batch": PENDING claims
+   * count their requestedKg, APPROVED/COLLECTED count their locked approvedKg. Lives here
+   * rather than in ClaimsService so both Batches and Claims can use it without either
+   * module depending on the other.
+   */
+  async allowanceLeftKgFor(
+    batchId: string,
+    takerId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const map = await this.allowanceLeftKgForMany([batchId], takerId, tx);
+    return map.get(batchId)!;
+  }
+
+  /** Batched version for list endpoints (no N+1) — same shape as forBatches above. */
+  async allowanceLeftKgForMany(
+    batchIds: string[],
+    takerId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Map<string, number>> {
+    const db = tx ?? this.prisma;
+    const used = new Map<string, Prisma.Decimal>(
+      batchIds.map((id) => [id, new Prisma.Decimal(0)]),
+    );
+
+    if (batchIds.length > 0) {
+      const rows = await db.claim.groupBy({
+        by: ['batchId', 'status'],
+        where: {
+          batchId: { in: batchIds },
+          takerId,
+          status: { in: [...LOCKING_CLAIM_STATUSES] },
+        },
+        _sum: { requestedKg: true, approvedKg: true },
+      });
+      for (const row of rows) {
+        const amount =
+          row.status === ClaimStatus.PENDING
+            ? (row._sum.requestedKg ?? 0)
+            : (row._sum.approvedKg ?? 0);
+        used.set(row.batchId, used.get(row.batchId)!.plus(amount));
+      }
+    }
+
+    const cap = toDecimal(MAX_CLAIM_KG);
+    return new Map(
+      batchIds.map((id) => {
+        const left = cap.minus(used.get(id)!);
+        return [
+          id,
+          decimalToNumber(left.isNegative() ? new Prisma.Decimal(0) : left),
+        ];
+      }),
     );
   }
 }

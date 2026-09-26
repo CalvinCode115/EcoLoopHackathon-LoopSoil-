@@ -1,10 +1,17 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { ALLOCATION_TRANSITIONS } from '../allocations/allocations.service';
 import { CLAIM_TRANSITIONS } from '../claims/claims.service';
+import { HANDOVER_OVER_TOLERANCE } from '../common/constants';
 import {
   assertTransition,
   DomainException,
 } from '../common/errors/domain.exception';
+import {
+  decimalExceeds,
+  decimalToNumber,
+  toDecimal,
+  type DecimalValue,
+} from '../common/kg';
 import { pageArgs, paginated, type Paginated } from '../common/pagination';
 import { nextSequence, yearMonthSG } from '../common/reference';
 import {
@@ -36,6 +43,10 @@ const takerSummary = {
   select: { id: true, userId: true, name: true, type: true, category: true },
 } as const;
 
+const batchSummary = {
+  select: { id: true, reference: true, harvestDate: true },
+} as const;
+
 const handoverInclude = {
   booking: {
     select: {
@@ -48,7 +59,7 @@ const handoverInclude = {
           startTime: true,
           endTime: true,
           location: true,
-          batch: { select: { id: true, reference: true, harvestDate: true } },
+          batch: batchSummary,
         },
       },
       claim: {
@@ -58,6 +69,7 @@ const handoverInclude = {
           status: true,
           approvedKg: true,
           taker: takerSummary,
+          batch: batchSummary,
         },
       },
       allocation: {
@@ -67,6 +79,7 @@ const handoverInclude = {
           status: true,
           allocatedKg: true,
           taker: takerSummary,
+          batch: batchSummary,
         },
       },
     },
@@ -79,7 +92,12 @@ type HandoverRow = Prisma.HandoverGetPayload<{
 }>;
 
 /** The stored row plus the flattened chain (batch, taker, expected kg) and a fresh signed photo URL. */
-export type HandoverDetail = Omit<HandoverRow, 'photoUrl'> & {
+export type HandoverDetail = Omit<
+  HandoverRow,
+  'photoUrl' | 'actualKg' | 'looseKg'
+> & {
+  actualKg: number;
+  looseKg: number;
   /** Object path in the private bucket (what the DB stores). */
   photoPath: string | null;
   /** Signed URL valid ~1h, or null when no photo. */
@@ -105,15 +123,27 @@ export class HandoversService {
   ) {}
 
   /**
-   * THE integrity write (CLAUDE.md §13). Photo is uploaded first so the row is born with
-   * its evidence; then ONE transaction creates the Handover and flips Booking and
-   * Claim/Allocation to COLLECTED. If the transaction fails the photo is removed again.
+   * THE integrity write (CLAUDE.md §13). A photo is required and uploaded first so the row
+   * is born with its evidence; then ONE transaction creates the Handover and flips Booking
+   * and Claim/Allocation to COLLECTED. If the transaction fails the photo is removed again.
+   * actualKg is computed from the bag breakdown and may exceed the approved/allocated kg
+   * by at most HANDOVER_OVER_TOLERANCE.
    */
   async create(
     dto: CreateHandoverDto,
     photo: UploadedPhoto | undefined,
     manager: User,
   ): Promise<HandoverDetail> {
+    if (!photo) {
+      throw new DomainException(
+        'PHOTO_REQUIRED',
+        'A handover photo is required',
+      );
+    }
+    const halfKgBags = dto.halfKgBags ?? 0;
+    const oneKgBags = dto.oneKgBags ?? 0;
+    const looseKg = toDecimal(dto.looseKg ?? 0);
+    const actualKg = computeActualKg(halfKgBags, oneKgBags, looseKg);
     const handedOverAt = dto.handedOverAt
       ? new Date(dto.handedOverAt)
       : new Date();
@@ -121,23 +151,22 @@ export class HandoversService {
 
     // Fail fast (before any upload) if the booking cannot be collected.
     const preflight = await loadCollectableBooking(this.prisma, dto.bookingId);
+    assertWithinTolerance(actualKg, expectedKgOf(preflight));
 
-    let photoPath: string | null = null;
-    if (photo) {
-      photoPath = await this.storage.uploadHandoverPhoto(
-        photoObjectPath(
-          preflight.slot.batch.reference,
-          preflight.id,
-          photo.mimetype,
-        ),
-        photo,
-      );
-    }
+    const photoPath = await this.storage.uploadHandoverPhoto(
+      photoObjectPath(
+        batchReferenceOf(preflight),
+        preflight.id,
+        photo.mimetype,
+      ),
+      photo,
+    );
 
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         // Re-validate inside the transaction — state may have moved since preflight.
         const booking = await loadCollectableBooking(tx, dto.bookingId);
+        assertWithinTolerance(actualKg, expectedKgOf(booking));
 
         await tx.booking.update({
           where: { id: booking.id },
@@ -164,7 +193,10 @@ export class HandoversService {
           data: {
             reference,
             bookingId: booking.id,
-            actualKg: dto.actualKg,
+            actualKg,
+            halfKgBags,
+            oneKgBags,
+            looseKg,
             photoUrl: photoPath,
             handedOverById: manager.id,
             handedOverAt,
@@ -176,7 +208,7 @@ export class HandoversService {
       });
       return (await this.present([row]))[0];
     } catch (err) {
-      if (photoPath) await this.storage.removeHandoverPhoto(photoPath);
+      await this.storage.removeHandoverPhoto(photoPath);
       throw err;
     }
   }
@@ -189,7 +221,9 @@ export class HandoversService {
     });
     if (!existing) throw new NotFoundException('Handover not found');
 
-    const batchRef = existing.booking?.slot.batch.reference ?? 'unlinked';
+    const batchRef = existing.booking
+      ? batchReferenceOf(existing.booking)
+      : 'unlinked';
     const newPath = await this.storage.uploadHandoverPhoto(
       photoObjectPath(
         batchRef,
@@ -224,20 +258,33 @@ export class HandoversService {
           }
         : {}),
       ...(q.missingPhoto ? { photoUrl: null } : {}),
-      ...(q.batchId ? { booking: { slot: { batchId: q.batchId } } } : {}),
-      ...(q.takerId
-        ? {
-            booking: {
-              OR: [
-                { claim: { takerId: q.takerId } },
-                { allocation: { takerId: q.takerId } },
-              ],
-            },
-          }
-        : {}),
-      ...(user.role === UserRole.TAKER
-        ? { booking: { claim: { taker: { userId: user.id } } } }
-        : {}),
+      // AND, not spread: each of these filters on `booking` and would overwrite the others.
+      // Batch comes from the claim/allocation — a general slot has no batch of its own.
+      AND: [
+        q.batchId
+          ? {
+              booking: {
+                OR: [
+                  { claim: { batchId: q.batchId } },
+                  { allocation: { batchId: q.batchId } },
+                ],
+              },
+            }
+          : {},
+        q.takerId
+          ? {
+              booking: {
+                OR: [
+                  { claim: { takerId: q.takerId } },
+                  { allocation: { takerId: q.takerId } },
+                ],
+              },
+            }
+          : {},
+        user.role === UserRole.TAKER
+          ? { booking: { claim: { taker: { userId: user.id } } } }
+          : {},
+      ],
     };
 
     const [total, rows] = await Promise.all([
@@ -274,13 +321,28 @@ export class HandoversService {
     return (await this.present([row]))[0];
   }
 
-  /** Manager correction (e.g. a mistyped weight). `updatedAt` records that it was edited. */
+  /**
+   * Manager correction (e.g. miscounted bags). Omitted bag fields keep their stored value;
+   * actualKg is recomputed and re-checked against the tolerance. `updatedAt` records the edit.
+   */
   async update(id: string, dto: UpdateHandoverDto): Promise<HandoverDetail> {
-    const existing = await this.prisma.handover.findUnique({ where: { id } });
+    const existing = await this.prisma.handover.findUnique({
+      where: { id },
+      include: handoverInclude,
+    });
     if (!existing) throw new NotFoundException('Handover not found');
+
+    const halfKgBags = dto.halfKgBags ?? existing.halfKgBags;
+    const oneKgBags = dto.oneKgBags ?? existing.oneKgBags;
+    const looseKg = toDecimal(dto.looseKg ?? existing.looseKg);
+    const actualKg = computeActualKg(halfKgBags, oneKgBags, looseKg);
+    if (existing.booking) {
+      assertWithinTolerance(actualKg, expectedKgOf(existing.booking));
+    }
+
     const row = await this.prisma.handover.update({
       where: { id },
-      data: { actualKg: dto.actualKg, note: dto.note },
+      data: { actualKg, halfKgBags, oneKgBags, looseKg, note: dto.note },
       include: handoverInclude,
     });
     return (await this.present([row]))[0];
@@ -296,11 +358,15 @@ export class HandoversService {
       const claim = row.booking?.claim ?? null;
       const allocation = row.booking?.allocation ?? null;
       const taker = claim?.taker ?? allocation?.taker ?? null;
+      const expectedKg = row.booking ? expectedKgOf(row.booking) : null;
       return {
         ...rest,
+        actualKg: decimalToNumber(row.actualKg),
+        looseKg: decimalToNumber(row.looseKg),
         photoPath,
         photoUrl: photoPath ? (signed.get(photoPath) ?? null) : null,
-        batch: row.booking?.slot.batch ?? null,
+        batch:
+          row.booking?.slot.batch ?? claim?.batch ?? allocation?.batch ?? null,
         taker: taker
           ? {
               id: taker.id,
@@ -311,11 +377,7 @@ export class HandoversService {
           : null,
         source: claim ? 'CLAIM' : allocation ? 'ALLOCATION' : null,
         sourceReference: claim?.reference ?? allocation?.reference ?? null,
-        expectedKg: claim
-          ? claim.approvedKg
-          : allocation
-            ? allocation.allocatedKg
-            : null,
+        expectedKg: expectedKg === null ? null : decimalToNumber(expectedKg),
       };
     });
   }
@@ -324,8 +386,24 @@ export class HandoversService {
 // ─── rules (unit-tested) ──────────────────────────────────────────────────────
 
 const collectableInclude = {
-  claim: { select: { id: true, reference: true, status: true } },
-  allocation: { select: { id: true, reference: true, status: true } },
+  claim: {
+    select: {
+      id: true,
+      reference: true,
+      status: true,
+      approvedKg: true,
+      batch: { select: { reference: true } },
+    },
+  },
+  allocation: {
+    select: {
+      id: true,
+      reference: true,
+      status: true,
+      allocatedKg: true,
+      batch: { select: { reference: true } },
+    },
+  },
   slot: { select: { batch: { select: { reference: true } } } },
   handover: { select: { id: true, reference: true } },
 } satisfies Prisma.BookingInclude;
@@ -373,6 +451,63 @@ export async function loadCollectableBooking(
     );
   }
   return booking;
+}
+
+/** NET kg from the bag breakdown: 0.5 x half-kg bags + 1 x one-kg bags + loose. */
+export function computeActualKg(
+  halfKgBags: number,
+  oneKgBags: number,
+  looseKg: DecimalValue,
+): Prisma.Decimal {
+  const total = toDecimal(halfKgBags)
+    .times(0.5)
+    .plus(oneKgBags)
+    .plus(toDecimal(looseKg));
+  if (!total.greaterThan(0)) {
+    throw new DomainException(
+      'HANDOVER_EMPTY',
+      'Enter at least one bag or some loose kg',
+    );
+  }
+  return total;
+}
+
+/** actualKg may exceed the approved/allocated kg by at most HANDOVER_OVER_TOLERANCE (10%). */
+export function assertWithinTolerance(
+  actualKg: DecimalValue,
+  expectedKg: DecimalValue | null,
+): void {
+  if (expectedKg === null) return;
+  const ceiling = toDecimal(expectedKg).times(1 + HANDOVER_OVER_TOLERANCE);
+  if (decimalExceeds(actualKg, ceiling)) {
+    throw new DomainException(
+      'HANDOVER_OVER_TOLERANCE',
+      `Handed-over ${decimalToNumber(actualKg)} kg exceeds the ${decimalToNumber(expectedKg)} kg ` +
+        `approved by more than ${HANDOVER_OVER_TOLERANCE * 100}%`,
+    );
+  }
+}
+
+/** approvedKg (claim) or allocatedKg (allocation); null for a claim not yet approved. */
+function expectedKgOf(booking: {
+  claim: { approvedKg: DecimalValue | null } | null;
+  allocation: { allocatedKg: DecimalValue } | null;
+}): DecimalValue | null {
+  return booking.claim?.approvedKg ?? booking.allocation?.allocatedKg ?? null;
+}
+
+/** Folder for the photo: the slot's batch, else the claim/allocation's (general slots). */
+function batchReferenceOf(booking: {
+  slot: { batch: { reference: string } | null };
+  claim: { batch: { reference: string } } | null;
+  allocation: { batch: { reference: string } } | null;
+}): string {
+  return (
+    booking.slot.batch?.reference ??
+    booking.claim?.batch.reference ??
+    booking.allocation?.batch.reference ??
+    'general'
+  );
 }
 
 export function assertNotFuture(handedOverAt: Date): void {

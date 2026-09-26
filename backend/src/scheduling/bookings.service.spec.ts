@@ -11,6 +11,7 @@ import {
 } from '../generated/prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
+  assertOutsideChangeCutoff,
   assertSlotBookable,
   BookingsService,
   collectionDeadlineFor,
@@ -266,6 +267,7 @@ describe('BookingsService — no-show releases the kg (§11, §13)', () => {
     id: 'bk-1',
     status: BookingStatus.BOOKED,
     slotId: 's-1',
+    slot: { startTime: new Date(Date.now() - 3600_000) }, // slot already started
     claim: {
       id: 'c-1',
       reference: 'CLM-2026-001',
@@ -393,5 +395,49 @@ describe('BookingsService.reschedule / cancel', () => {
     const result = await service.cancel('bk-1', { note: 'cannot make it' }, jo);
     expect(result.status).toBe(BookingStatus.CANCELLED);
     expect(prisma.claim.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('Stage 5 rules (Backend-Updates.md §D/§E)', () => {
+  it('change-pickup cutoff: blocked within 2h of the current slot, allowed before', () => {
+    const now = new Date('2026-09-28T10:00:00Z');
+    expect(() =>
+      assertOutsideChangeCutoff(new Date('2026-09-28T11:30:00Z'), now),
+    ).toThrow(DomainException);
+    expect(() =>
+      assertOutsideChangeCutoff(new Date('2026-09-28T12:30:00Z'), now),
+    ).not.toThrow();
+  });
+
+  it('a general-availability slot (no batch) accepts a booking from any batch', () => {
+    const general = { ...slot(), batchId: null };
+    expect(() =>
+      assertSlotBookable(general as never, 'b-any', new Date()),
+    ).not.toThrow();
+  });
+
+  it('manual no-show is refused before the slot has started', async () => {
+    const { service } = setup({
+      booking: {
+        id: 'bk-1',
+        status: BookingStatus.BOOKED,
+        slot: { startTime: new Date(Date.now() + 3600_000) },
+        claim: null,
+        allocation: null,
+      },
+    });
+    await expect(service.markNoShow('bk-1')).rejects.toMatchObject({
+      code: 'SLOT_NOT_STARTED',
+    });
+  });
+
+  it('a manager booking records who booked it (on-behalf)', async () => {
+    const { service, prisma } = setup();
+    await service.create({ slotId: 's-1', claimId: 'c-1' }, manager);
+    expect(prisma.booking.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ bookedById: 'u-mgr' }),
+      }),
+    );
   });
 });

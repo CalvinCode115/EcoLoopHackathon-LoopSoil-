@@ -34,8 +34,9 @@ export class HandoversController {
   constructor(private readonly handovers: HandoversService) {}
 
   /**
-   * Record a handover: multipart/form-data with `bookingId`, `actualKg` (NET), optional
-   * `note`, `takerConfirmed`, `handedOverAt`, and the `photo` file.
+   * Record a handover: multipart/form-data with `bookingId`, the bag breakdown
+   * (`halfKgBags`, `oneKgBags`, `looseKg` -> server computes NET actualKg), the required
+   * `photo` file, and optional `note`, `takerConfirmed`, `handedOverAt`.
    */
   @Roles(UserRole.MANAGER)
   @Post()

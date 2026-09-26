@@ -1,7 +1,14 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
-import { DomainException } from '../common/errors/domain.exception';
+import {
+  assertTransition,
+  DomainException,
+} from '../common/errors/domain.exception';
 import { pageArgs, paginated, type Paginated } from '../common/pagination';
 import {
+  AllocationStatus,
+  BookingStatus,
+  CancellationReason,
+  ClaimStatus,
   Prisma,
   TakerStatus,
   TakerType,
@@ -12,7 +19,28 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { CreateBulkTakerDto } from './dto/create-bulk-taker.dto';
 import type { ListTakersQueryDto } from './dto/list-takers-query.dto';
 import type { RegisterTakerDto } from './dto/register-taker.dto';
+import type {
+  ApproveTakerDto,
+  DeclineTakerDto,
+  ReinstateTakerDto,
+  SuspendTakerDto,
+} from './dto/taker-status-action.dto';
 import type { UpdateTakerDto } from './dto/update-taker.dto';
+
+/**
+ * CLAUDE.md / Backend-Updates.md §E. REJECTED is not a dead end — a manager can
+ * reconsider and approve a previously-declined applicant, the same way `/approve`
+ * also covers first-time vetting from PENDING.
+ */
+export const TAKER_STATUS_TRANSITIONS: Record<
+  TakerStatus,
+  readonly TakerStatus[]
+> = {
+  PENDING: [TakerStatus.APPROVED, TakerStatus.REJECTED],
+  APPROVED: [TakerStatus.SUSPENDED],
+  REJECTED: [TakerStatus.APPROVED],
+  SUSPENDED: [TakerStatus.APPROVED],
+};
 
 @Injectable()
 export class TakersService {
@@ -68,10 +96,151 @@ export class TakersService {
     return taker;
   }
 
-  /** Manager edit — including `status` (APPROVED / SUSPENDED) for vetting. */
+  /** Profile fields only — see UpdateTakerDto for why `status` isn't here. */
   async update(id: string, dto: UpdateTakerDto): Promise<Taker> {
     await this.getById(id);
     return this.prisma.taker.update({ where: { id }, data: dto });
+  }
+
+  // ─── vetting: discrete, audited status actions (Backend-Updates.md §C2, §E) ──
+
+  /** PENDING → APPROVED (first vetting), or REJECTED → APPROVED (manager reconsiders). */
+  approve(id: string, dto: ApproveTakerDto, manager: User): Promise<Taker> {
+    return this.changeStatus(
+      id,
+      TakerStatus.APPROVED,
+      dto.statusReason,
+      manager,
+    );
+  }
+
+  /** PENDING → REJECTED. Cancels any active claims/allocations — see requireApprovedIndividual. */
+  decline(id: string, dto: DeclineTakerDto, manager: User): Promise<Taker> {
+    return this.changeStatus(
+      id,
+      TakerStatus.REJECTED,
+      dto.statusReason,
+      manager,
+      {
+        cascade: true,
+      },
+    );
+  }
+
+  /**
+   * APPROVED → SUSPENDED. "Suspending (or rejecting) a taker cancels their active claims
+   * and bookings and frees the kg back to the pool" (§E) — extended here to allocations
+   * too, since that's how BULK takers hold kg; the same reasoning applies symmetrically.
+   */
+  suspend(id: string, dto: SuspendTakerDto, manager: User): Promise<Taker> {
+    return this.changeStatus(
+      id,
+      TakerStatus.SUSPENDED,
+      dto.statusReason,
+      manager,
+      {
+        cascade: true,
+      },
+    );
+  }
+
+  /** SUSPENDED → APPROVED. No cascade — reinstating unlocks them, cancels nothing. */
+  reinstate(id: string, dto: ReinstateTakerDto, manager: User): Promise<Taker> {
+    return this.changeStatus(
+      id,
+      TakerStatus.APPROVED,
+      dto.statusReason,
+      manager,
+    );
+  }
+
+  private changeStatus(
+    id: string,
+    to: TakerStatus,
+    statusReason: string | undefined,
+    manager: User,
+    opts: { cascade?: boolean } = {},
+  ): Promise<Taker> {
+    return this.prisma.$transaction(async (tx) => {
+      const taker = await tx.taker.findUnique({ where: { id } });
+      if (!taker) throw new NotFoundException('Taker not found');
+      assertTransition('Taker', TAKER_STATUS_TRANSITIONS, taker.status, to);
+
+      if (opts.cascade) {
+        const note = `Taker ${to === TakerStatus.SUSPENDED ? 'suspended' : 'declined'}${statusReason ? ` — ${statusReason}` : ''}`;
+        await this.cascadeCancelActive(tx, id, note);
+      }
+
+      return tx.taker.update({
+        where: { id },
+        data: {
+          status: to,
+          statusReason: statusReason ?? null,
+          statusChangedAt: new Date(),
+          statusChangedById: manager.id,
+        },
+      });
+    });
+  }
+
+  /**
+   * Cancel every active claim (PENDING/APPROVED) and allocation (PLANNED/CONFIRMED) for
+   * this taker, plus any BOOKED pickup tied to them, so the kg frees back to the pool.
+   */
+  private async cascadeCancelActive(
+    tx: Prisma.TransactionClient,
+    takerId: string,
+    note: string,
+  ): Promise<void> {
+    const [activeClaims, activeAllocations] = await Promise.all([
+      tx.claim.findMany({
+        where: {
+          takerId,
+          status: { in: [ClaimStatus.PENDING, ClaimStatus.APPROVED] },
+        },
+        select: { id: true },
+      }),
+      tx.allocation.findMany({
+        where: {
+          takerId,
+          status: {
+            in: [AllocationStatus.PLANNED, AllocationStatus.CONFIRMED],
+          },
+        },
+        select: { id: true },
+      }),
+    ]);
+    const claimIds = activeClaims.map((c) => c.id);
+    const allocationIds = activeAllocations.map((a) => a.id);
+
+    if (claimIds.length > 0) {
+      await tx.booking.updateMany({
+        where: { claimId: { in: claimIds }, status: BookingStatus.BOOKED },
+        data: { status: BookingStatus.CANCELLED, cancelNote: note },
+      });
+      await tx.claim.updateMany({
+        where: { id: { in: claimIds } },
+        data: {
+          status: ClaimStatus.CANCELLED,
+          cancellationReason: CancellationReason.OTHER,
+          reasonNote: note,
+          cancelledAt: new Date(),
+        },
+      });
+    }
+    if (allocationIds.length > 0) {
+      await tx.booking.updateMany({
+        where: {
+          allocationId: { in: allocationIds },
+          status: BookingStatus.BOOKED,
+        },
+        data: { status: BookingStatus.CANCELLED, cancelNote: note },
+      });
+      await tx.allocation.updateMany({
+        where: { id: { in: allocationIds } },
+        data: { status: AllocationStatus.CANCELLED, note },
+      });
+    }
   }
 
   // ─── individuals (self-service) ──────────────────────────────────────────
@@ -153,6 +322,13 @@ export class TakersService {
       throw new DomainException(
         'TAKER_NOT_APPROVED',
         'Your registration is awaiting manager approval',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (taker.status === TakerStatus.REJECTED) {
+      throw new DomainException(
+        'TAKER_REJECTED',
+        'Your taker registration was declined — contact the SUSS compost team',
         HttpStatus.FORBIDDEN,
       );
     }

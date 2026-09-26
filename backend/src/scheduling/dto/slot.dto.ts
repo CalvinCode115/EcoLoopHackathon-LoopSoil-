@@ -16,8 +16,10 @@ import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { SlotStatus } from '../../generated/prisma/client';
 
 export class CreateSlotDto {
+  /** Optional: omit for a general availability window not tied to one harvest. */
+  @IsOptional()
   @IsUUID()
-  batchId: string;
+  batchId?: string;
 
   @IsDateString()
   startTime: string;

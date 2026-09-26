@@ -14,6 +14,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole, type User } from '../generated/prisma/client';
 import { ClaimsService } from './claims.service';
+import { BulkApproveClaimsDto } from './dto/bulk-approve-claims.dto';
 import { CreateClaimDto } from './dto/create-claim.dto';
 import {
   ApproveClaimDto,
@@ -40,6 +41,16 @@ export class ClaimsController {
     return this.claims.list(q, user);
   }
 
+  /**
+   * APPROVED claims with no active booking. Declared before `:id` so the literal
+   * segment wins over the UUID param (which would otherwise 400 on "needs-booking").
+   */
+  @Roles(UserRole.MANAGER)
+  @Get('needs-booking')
+  needsBooking(@Query() q: ListClaimsQueryDto) {
+    return this.claims.listNeedsBooking(q);
+  }
+
   @Get(':id')
   getById(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.claims.getById(id, user);
@@ -53,6 +64,14 @@ export class ClaimsController {
     @Body() dto: ApproveClaimDto,
   ) {
     return this.claims.approve(id, dto);
+  }
+
+  /** Approve several at once. Partial success — see the `skipped` list in the response. */
+  @Roles(UserRole.MANAGER)
+  @Post('bulk-approve')
+  @HttpCode(HttpStatus.OK)
+  bulkApprove(@Body() dto: BulkApproveClaimsDto) {
+    return this.claims.bulkApprove(dto.claimIds);
   }
 
   @Roles(UserRole.MANAGER)

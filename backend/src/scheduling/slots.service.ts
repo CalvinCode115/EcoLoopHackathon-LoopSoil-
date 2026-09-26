@@ -58,7 +58,7 @@ export function presentSlot(row: SlotRow): SlotDetail {
     ...slot,
     bookedCount: _count.bookings,
     remainingCapacity: Math.max(0, slot.capacity - _count.bookings),
-    effectiveLocation: slot.location ?? slot.batch.pickupLocation,
+    effectiveLocation: slot.location ?? slot.batch?.pickupLocation ?? null,
   };
 }
 
@@ -66,18 +66,24 @@ export function presentSlot(row: SlotRow): SlotDetail {
 export class SlotsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Slots can be added to any batch that is not COMPLETED — CLOSED batches still need pickups. */
+  /**
+   * Slots can be tied to any batch that is not COMPLETED — CLOSED batches still need
+   * pickups — or have no batch at all: a general availability window (Backend-Updates.md
+   * §C2) that any batch's claim/allocation can book into.
+   */
   async create(dto: CreateSlotDto): Promise<SlotDetail> {
-    const batch = await this.prisma.batch.findUnique({
-      where: { id: dto.batchId },
-    });
-    if (!batch) throw new NotFoundException('Batch not found');
-    if (batch.status === BatchStatus.COMPLETED) {
-      throw new DomainException(
-        'BATCH_COMPLETED',
-        `Batch ${batch.reference} is completed — no more pickups`,
-        HttpStatus.CONFLICT,
-      );
+    if (dto.batchId) {
+      const batch = await this.prisma.batch.findUnique({
+        where: { id: dto.batchId },
+      });
+      if (!batch) throw new NotFoundException('Batch not found');
+      if (batch.status === BatchStatus.COMPLETED) {
+        throw new DomainException(
+          'BATCH_COMPLETED',
+          `Batch ${batch.reference} is completed — no more pickups`,
+          HttpStatus.CONFLICT,
+        );
+      }
     }
     const startTime = new Date(dto.startTime);
     const endTime = new Date(dto.endTime);
@@ -104,7 +110,11 @@ export class SlotsService {
       ...(user.role === UserRole.TAKER
         ? {
             status: SlotStatus.OPEN,
-            batch: { status: { not: BatchStatus.DRAFT } },
+            // General windows (no batch) are always visible; batch slots hide while DRAFT.
+            OR: [
+              { batchId: null },
+              { batch: { status: { not: BatchStatus.DRAFT } } },
+            ],
           }
         : { status: q.status }),
       ...(q.upcoming ? { endTime: { gte: new Date() } } : {}),
@@ -128,7 +138,7 @@ export class SlotsService {
     });
     if (
       !row ||
-      (user.role === UserRole.TAKER && row.batch.status === BatchStatus.DRAFT)
+      (user.role === UserRole.TAKER && row.batch?.status === BatchStatus.DRAFT)
     ) {
       throw new NotFoundException('Pickup slot not found');
     }
@@ -197,9 +207,11 @@ export class SlotsService {
       );
       await tx.booking.updateMany({
         where: { slotId: id, status: BookingStatus.BOOKED },
+        // Claims/allocations stay APPROVED/CONFIRMED with no active booking — that is
+        // exactly the "needs booking" state (GET /claims/needs-booking), derived not stored.
         data: {
           status: BookingStatus.CANCELLED,
-          note: 'Slot cancelled by manager — please rebook',
+          cancelNote: 'Slot cancelled by manager — please rebook',
         },
       });
       const row = await tx.pickupSlot.update({

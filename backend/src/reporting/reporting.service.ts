@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import {
+  BatchPoolService,
+  type BatchPool,
+} from '../batches/batch-pool.service';
+import { decimalToNumber } from '../common/kg';
+import { yearMonthSG } from '../common/reference';
+import {
   BatchStatus,
   BookingStatus,
   ClaimStatus,
@@ -24,27 +30,27 @@ import {
  * allocated kg (CLAUDE.md §13). Rows are aggregated in memory: fine at pilot scale
  * (tens to hundreds of handovers); a SQL-side rollup is the documented scale-up step.
  */
+const reportBatch = {
+  select: {
+    id: true,
+    reference: true,
+    harvestDate: true,
+    totalKg: true,
+    schoolReserveKg: true,
+  },
+} as const;
+
 const impactInclude = {
   handedOverBy: { select: { name: true } },
   booking: {
     select: {
-      slot: {
-        select: {
-          batch: {
-            select: {
-              id: true,
-              reference: true,
-              harvestDate: true,
-              totalKg: true,
-              schoolReserveKg: true,
-            },
-          },
-        },
-      },
+      slot: { select: { batch: reportBatch } },
+      // The claim/allocation batch is the fallback when the slot is a general one (no batch).
       claim: {
         select: {
           reference: true,
           approvedKg: true,
+          batch: reportBatch,
           taker: {
             select: { id: true, name: true, type: true, category: true },
           },
@@ -54,6 +60,7 @@ const impactInclude = {
         select: {
           reference: true,
           allocatedKg: true,
+          batch: reportBatch,
           taker: {
             select: { id: true, name: true, type: true, category: true },
           },
@@ -62,6 +69,9 @@ const impactInclude = {
     },
   },
 } satisfies Prisma.HandoverInclude;
+
+/** Handovers soft-cancelled by the undo (`undoneAt`) never count. */
+const LIVE_HANDOVER: Prisma.HandoverWhereInput = { undoneAt: null };
 
 type HandoverForReport = Prisma.HandoverGetPayload<{
   include: typeof impactInclude;
@@ -75,9 +85,106 @@ export interface PipelineReport {
   handovers: { missingPhoto: number };
 }
 
+export interface ManagerDashboard {
+  generatedAt: string;
+  /** All-time and current-month (Singapore time) totals — Σ Handover.actualKg only. */
+  impact: {
+    allTime: ImpactReport['totals'];
+    thisMonth: { month: string; kgDiverted: number; handovers: number };
+  };
+  /** What needs attention now (same payload as GET /reporting/pipeline). */
+  pipeline: PipelineReport;
+  /** OPEN batches with their live pool, oldest harvest first. */
+  openBatches: ({
+    id: string;
+    reference: string;
+    harvestDate: Date;
+    availableUntil: Date | null;
+  } & BatchPool)[];
+  recentHandovers: {
+    id: string;
+    reference: string;
+    handedOverAt: Date;
+    actualKg: number;
+    takerName: string | null;
+    batchReference: string | null;
+    hasPhoto: boolean;
+  }[];
+}
+
+const RECENT_HANDOVERS = 5;
+
 @Injectable()
 export class ReportingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pools: BatchPoolService,
+  ) {}
+
+  /**
+   * GET /manager/dashboard — one payload composed from the existing reports, so the
+   * figures always agree with /reporting/impact, /reporting/pipeline and batch pools.
+   */
+  async dashboard(now: Date = new Date()): Promise<ManagerDashboard> {
+    const { year, month } = yearMonthSG(now);
+    const monthStart = new Date(`${year}-${month}-01T00:00:00+08:00`);
+
+    const openBatchesQuery = this.prisma.batch.findMany({
+      where: { status: BatchStatus.OPEN },
+      select: {
+        id: true,
+        reference: true,
+        harvestDate: true,
+        availableUntil: true,
+        totalKg: true,
+        schoolReserveKg: true,
+      },
+      orderBy: { harvestDate: 'asc' },
+    });
+    const [rows, pipeline, openBatches] = await Promise.all([
+      this.loadHandovers({}),
+      this.pipeline(now),
+      openBatchesQuery,
+    ]);
+    const pools = await this.pools.forBatches(openBatches);
+
+    const impactRows = rows.map(toImpactRow);
+    const monthRows = impactRows.filter((r) => r.handedOverAt >= monthStart);
+    const monthTotals = aggregateImpact(monthRows).totals;
+
+    return {
+      generatedAt: now.toISOString(),
+      impact: {
+        allTime: aggregateImpact(impactRows).totals,
+        thisMonth: {
+          month: `${year}-${month}`,
+          kgDiverted: monthTotals.kgDiverted,
+          handovers: monthTotals.handovers,
+        },
+      },
+      pipeline,
+      openBatches: openBatches.map((b) => ({
+        id: b.id,
+        reference: b.reference,
+        harvestDate: b.harvestDate,
+        availableUntil: b.availableUntil,
+        ...pools.get(b.id)!,
+      })),
+      // loadHandovers is newest-first.
+      recentHandovers: rows.slice(0, RECENT_HANDOVERS).map((h) => {
+        const row = toDiaryRow(h);
+        return {
+          id: h.id,
+          reference: h.reference,
+          handedOverAt: h.handedOverAt,
+          actualKg: row.actualKg,
+          takerName: row.takerName,
+          batchReference: row.batchReference,
+          hasPhoto: row.hasPhoto,
+        };
+      }),
+    };
+  }
 
   async impact(q: ImpactQueryDto): Promise<ImpactReport> {
     const period = toPeriod(q);
@@ -144,7 +251,9 @@ export class ReportingService {
           collectionDeadline: { lt: now },
         },
       }),
-      this.prisma.handover.count({ where: { photoUrl: null } }),
+      this.prisma.handover.count({
+        where: { ...LIVE_HANDOVER, photoUrl: null },
+      }),
     ]);
     return {
       batches: { draft, open, closed },
@@ -164,10 +273,12 @@ export class ReportingService {
     order: 'asc' | 'desc' = 'desc',
   ): Promise<HandoverForReport[]> {
     return this.prisma.handover.findMany({
-      where:
-        period.from || period.to
+      where: {
+        ...LIVE_HANDOVER,
+        ...(period.from || period.to
           ? { handedOverAt: { gte: period.from, lte: period.to } }
-          : {},
+          : {}),
+      },
       include: impactInclude,
       orderBy: { handedOverAt: order },
     });
@@ -181,14 +292,34 @@ function toPeriod(q: ImpactQueryDto): { from?: Date; to?: Date } {
   };
 }
 
+/** Slot's batch, else the claim/allocation's (general-availability slots have none). */
+function batchOf(h: HandoverForReport) {
+  return (
+    h.booking?.slot.batch ??
+    h.booking?.claim?.batch ??
+    h.booking?.allocation?.batch ??
+    null
+  );
+}
+
+/** Decimal -> number happens here, so impact.aggregate stays plain-number and pure. */
 function toImpactRow(h: HandoverForReport): ImpactRow {
   const taker = h.booking?.claim?.taker ?? h.booking?.allocation?.taker ?? null;
+  const batch = batchOf(h);
   return {
-    actualKg: h.actualKg,
+    actualKg: decimalToNumber(h.actualKg),
     handedOverAt: h.handedOverAt,
     photoUrl: h.photoUrl,
     takerConfirmed: h.takerConfirmed,
-    batch: h.booking?.slot.batch ?? null,
+    batch: batch
+      ? {
+          id: batch.id,
+          reference: batch.reference,
+          harvestDate: batch.harvestDate,
+          totalKg: decimalToNumber(batch.totalKg),
+          schoolReserveKg: decimalToNumber(batch.schoolReserveKg),
+        }
+      : null,
     taker,
   };
 }
@@ -200,18 +331,18 @@ function toDiaryRow(h: HandoverForReport): DiaryRow {
   return {
     reference: h.reference,
     handedOverAt: h.handedOverAt,
-    batchReference: h.booking?.slot.batch.reference ?? null,
+    batchReference: batchOf(h)?.reference ?? null,
     source: claim ? 'CLAIM' : allocation ? 'ALLOCATION' : null,
     sourceReference: claim?.reference ?? allocation?.reference ?? null,
     takerName: taker?.name ?? null,
     takerType: taker?.type ?? null,
     takerCategory: taker?.category ?? null,
-    expectedKg: claim
-      ? claim.approvedKg
+    expectedKg: claim?.approvedKg
+      ? decimalToNumber(claim.approvedKg)
       : allocation
-        ? allocation.allocatedKg
+        ? decimalToNumber(allocation.allocatedKg)
         : null,
-    actualKg: h.actualKg,
+    actualKg: decimalToNumber(h.actualKg),
     hasPhoto: h.photoUrl !== null,
     takerConfirmed: h.takerConfirmed,
     handedOverBy: h.handedOverBy.name,

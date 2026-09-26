@@ -1,10 +1,17 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { BatchPoolService } from '../batches/batch-pool.service';
+import { MAX_CLAIM_KG, MIN_CLAIM_KG } from '../common/constants';
 import {
   assertTransition,
   DomainException,
 } from '../common/errors/domain.exception';
-import { formatKg, kgExceeds } from '../common/kg';
+import {
+  decimalExceeds,
+  formatDecimalKg,
+  formatKg,
+  kgExceeds,
+  toDecimal,
+} from '../common/kg';
 import { pageArgs, paginated, type Paginated } from '../common/pagination';
 import {
   BatchStatus,
@@ -55,7 +62,6 @@ const claimInclude = {
       status: true,
       harvestDate: true,
       pickupLocation: true,
-      bagSizeKg: true,
     },
   },
   booking: {
@@ -74,6 +80,11 @@ export type ClaimDetail = Prisma.ClaimGetPayload<{
   include: typeof claimInclude;
 }>;
 
+export interface BulkApproveResult {
+  approved: ClaimDetail[];
+  skipped: { claimId: string; reason: string }[];
+}
+
 const MAX_REFERENCE_RETRIES = 3;
 
 @Injectable()
@@ -90,6 +101,7 @@ export class ClaimsService {
    */
   async create(dto: CreateClaimDto, user: User): Promise<ClaimDetail> {
     const taker = await this.takers.requireApprovedIndividual(user);
+    assertValidClaimAmount(dto.requestedKg);
 
     for (let attempt = 1; ; attempt++) {
       try {
@@ -100,20 +112,17 @@ export class ClaimsService {
           if (!batch) throw new NotFoundException('Batch not found');
           assertBatchClaimable(batch, new Date());
 
-          // One live claim per taker per batch — cancel it to ask for a different amount.
-          const existing = await tx.claim.findFirst({
-            where: {
-              batchId: batch.id,
-              takerId: taker.id,
-              status: { in: [ClaimStatus.PENDING, ClaimStatus.APPROVED] },
-            },
-            select: { reference: true },
-          });
-          if (existing) {
+          // Running total per taker per batch (§E) — several small claims are fine as
+          // long as PENDING + APPROVED + COLLECTED never exceeds MAX_CLAIM_KG.
+          const allowanceLeft = await this.pool.allowanceLeftKgFor(
+            batch.id,
+            taker.id,
+            tx,
+          );
+          if (kgExceeds(dto.requestedKg, allowanceLeft)) {
             throw new DomainException(
-              'CLAIM_EXISTS',
-              `You already have claim ${existing.reference} on batch ${batch.reference} — cancel it to submit a different amount`,
-              HttpStatus.CONFLICT,
+              'CLAIM_ALLOWANCE_EXCEEDED',
+              `You have ${formatKg(allowanceLeft)} left to claim from batch ${batch.reference} (cap ${formatKg(MAX_CLAIM_KG)} per batch)`,
             );
           }
 
@@ -173,6 +182,34 @@ export class ClaimsService {
     return paginated(data, total, q);
   }
 
+  /**
+   * Manager's "needs booking" list (§E): APPROVED claims with no active booking — never
+   * booked, or their slot was cancelled. Derived from existing state, no new status.
+   */
+  async listNeedsBooking(
+    q: ListClaimsQueryDto,
+  ): Promise<Paginated<ClaimDetail>> {
+    const where: Prisma.ClaimWhereInput = {
+      batchId: q.batchId,
+      takerId: q.takerId,
+      status: ClaimStatus.APPROVED,
+      OR: [
+        { booking: null },
+        { booking: { status: { not: BookingStatus.BOOKED } } },
+      ],
+    };
+    const [total, data] = await Promise.all([
+      this.prisma.claim.count({ where }),
+      this.prisma.claim.findMany({
+        where,
+        include: claimInclude,
+        orderBy: { decidedAt: 'asc' }, // longest-waiting first
+        ...pageArgs(q),
+      }),
+    ]);
+    return paginated(data, total, q);
+  }
+
   async getById(id: string, user: User): Promise<ClaimDetail> {
     const claim = await this.prisma.claim.findUnique({
       where: { id },
@@ -202,21 +239,24 @@ export class ClaimsService {
         ClaimStatus.APPROVED,
       );
 
-      const approvedKg = dto.approvedKg ?? claim.requestedKg;
-      if (kgExceeds(approvedKg, claim.requestedKg)) {
+      const approvedKg =
+        dto.approvedKg !== undefined
+          ? toDecimal(dto.approvedKg)
+          : claim.requestedKg;
+      if (decimalExceeds(approvedKg, claim.requestedKg)) {
         throw new DomainException(
           'APPROVED_EXCEEDS_REQUESTED',
-          `Cannot approve ${formatKg(approvedKg)} — the taker asked for ${formatKg(claim.requestedKg)}`,
+          `Cannot approve ${formatDecimalKg(approvedKg)} — the taker asked for ${formatDecimalKg(claim.requestedKg)}`,
         );
       }
 
       // The claim's own PENDING lock is inside kgRemaining already, so it is available to itself.
       const pool = await this.pool.forBatch(claim.batch, tx);
-      const available = pool.kgRemaining + claim.requestedKg;
-      if (kgExceeds(approvedKg, available)) {
+      const available = pool.kgRemaining + claim.requestedKg.toNumber();
+      if (kgExceeds(approvedKg.toNumber(), available)) {
         throw new DomainException(
           'INSUFFICIENT_POOL',
-          `Only ${formatKg(Math.max(0, available))} available in batch ${claim.batch.reference}; cannot approve ${formatKg(approvedKg)}`,
+          `Only ${formatKg(Math.max(0, available))} available in batch ${claim.batch.reference}; cannot approve ${formatDecimalKg(approvedKg)}`,
         );
       }
 
@@ -231,6 +271,24 @@ export class ClaimsService {
         include: claimInclude,
       });
     });
+  }
+
+  /**
+   * Approve several claims in one call. Partial success (§E): each claim is its own
+   * transaction (via approve()), so one failure never rolls back the ones that already
+   * succeeded — it just gets reported in `skipped` alongside why.
+   */
+  async bulkApprove(claimIds: string[]): Promise<BulkApproveResult> {
+    const approved: ClaimDetail[] = [];
+    const skipped: { claimId: string; reason: string }[] = [];
+    for (const id of claimIds) {
+      try {
+        approved.push(await this.approve(id, {}));
+      } catch (err) {
+        skipped.push({ claimId: id, reason: domainErrorMessage(err) });
+      }
+    }
+    return { approved, skipped };
   }
 
   /** PENDING → REJECTED. Reason is required (enforced by the DTO); kg frees automatically. */
@@ -322,6 +380,29 @@ function canSee(
   return user.role === UserRole.MANAGER || claim.taker.userId === user.id;
 }
 
+/** Amount ≥ MIN_CLAIM_KG, ≤ MAX_CLAIM_KG, in exact 0.1kg steps (Backend-Updates.md §E, §D). */
+export function assertValidClaimAmount(requestedKg: number): void {
+  const amount = toDecimal(requestedKg);
+  if (amount.lessThan(MIN_CLAIM_KG)) {
+    throw new DomainException(
+      'CLAIM_BELOW_MINIMUM',
+      `A claim must be at least ${formatKg(MIN_CLAIM_KG)}`,
+    );
+  }
+  if (amount.greaterThan(MAX_CLAIM_KG)) {
+    throw new DomainException(
+      'CLAIM_ABOVE_MAXIMUM',
+      `A single claim cannot exceed ${formatKg(MAX_CLAIM_KG)}`,
+    );
+  }
+  if (!amount.mod(MIN_CLAIM_KG).isZero()) {
+    throw new DomainException(
+      'CLAIM_INVALID_STEP',
+      `Claims must be in steps of ${formatKg(MIN_CLAIM_KG)} (e.g. 0.5, 0.6, 0.7)`,
+    );
+  }
+}
+
 /** OPEN status is the manager's switch; the availability window (when set) is the clock. */
 export function assertBatchClaimable(batch: Batch, now: Date): void {
   if (batch.status !== BatchStatus.OPEN) {
@@ -345,6 +426,16 @@ export function assertBatchClaimable(batch: Batch, now: Date): void {
       HttpStatus.CONFLICT,
     );
   }
+}
+
+/** Human-readable reason for a bulkApprove `skipped` entry, from whatever approve() threw. */
+function domainErrorMessage(err: unknown): string {
+  if (err instanceof DomainException) {
+    const body = err.getResponse() as { message?: string };
+    return body.message ?? 'Could not approve this claim';
+  }
+  if (err instanceof NotFoundException) return 'Claim not found';
+  return 'Could not approve this claim';
 }
 
 /** "CLM-2026-001", "CLM-2026-002", … per calendar year (Singapore time). */

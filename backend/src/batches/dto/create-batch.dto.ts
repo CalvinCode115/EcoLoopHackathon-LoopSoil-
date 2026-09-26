@@ -40,12 +40,6 @@ export class CreateBatchDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 3 })
-  @IsPositive()
-  bagSizeKg?: number;
-
-  @IsOptional()
-  @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(14)

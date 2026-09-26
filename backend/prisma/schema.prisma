@@ -26,7 +26,7 @@ datasource db {
 
 enum UserRole {
   MANAGER // full admin: batches, allocations, approvals, handovers, dashboard
-  TAKER   // individual: browse, claim, book, collect
+  TAKER // individual: browse, claim, book, collect
 }
 
 enum UserStatus {
@@ -36,7 +36,7 @@ enum UserStatus {
 
 enum TakerType {
   INDIVIDUAL // self-registers, logs in, claims from public pool
-  BULK       // manager-created record, standing monthly allocation, no login
+  BULK // manager-created record, standing monthly allocation, no login
 }
 
 enum TakerCategory {
@@ -49,22 +49,23 @@ enum TakerCategory {
 }
 
 enum TakerStatus {
-  PENDING  // registered, awaiting manager approval
+  PENDING // registered, awaiting manager approval
   APPROVED // cleared to claim / receive
+  REJECTED // manager declined the registration
   SUSPENDED
 }
 
 enum BatchStatus {
-  DRAFT     // logged, not yet open to takers
-  OPEN      // public pool live, claimable
-  CLOSED    // claiming stopped (window ended or emptied)
+  DRAFT // logged, not yet open to takers
+  OPEN // public pool live, claimable
+  CLOSED // claiming stopped (window ended or emptied)
   COMPLETED // all handovers done, archived
 }
 
 enum ClaimStatus {
-  PENDING   // order submitted, awaiting manager decision
-  APPROVED  // approved — kg locked, amount final
-  REJECTED  // manager declined — reason required
+  PENDING // order submitted, awaiting manager decision
+  APPROVED // approved — kg locked, amount final
+  REJECTED // manager declined — reason required
   CANCELLED // taker withdrew — reason required
   COLLECTED // handed over (handover service sets this)
 }
@@ -86,22 +87,22 @@ enum CancellationReason {
 }
 
 enum AllocationStatus {
-  PLANNED   // manager reserved it off the batch
+  PLANNED // manager reserved it off the batch
   CONFIRMED // bulk taker confirmed they'll take it
   COLLECTED // handed over
   CANCELLED // fell through — kg releases back
 }
 
 enum SlotStatus {
-  OPEN      // published, bookable
-  CLOSED    // manager stopped taking bookings (or full)
+  OPEN // published, bookable
+  CLOSED // manager stopped taking bookings (or full)
   CANCELLED // slot scrapped — bookings need rebooking
 }
 
 enum BookingStatus {
-  BOOKED    // reserved into the slot, occupies capacity
+  BOOKED // reserved into the slot, occupies capacity
   COLLECTED // showed up, handed over
-  NO_SHOW   // didn't turn up before deadline
+  NO_SHOW // didn't turn up before deadline
   CANCELLED // released before pickup — frees capacity
 }
 
@@ -124,6 +125,12 @@ model User {
   batchesLogged Batch[]    @relation("BatchCreatedBy")
   takersCreated Taker[]    @relation("TakerCreatedBy") // bulk records this manager added
   handovers     Handover[] @relation("HandoverBy")
+
+  statusChangesMade      Taker[]           @relation("TakerStatusChangedBy") // vetting decisions this manager made
+  bookingsBookedOnBehalf Booking[]         @relation("BookingBookedBy") // bulk bookings this manager made on a taker's behalf
+  topUpsCreated          BatchTopUp[]      @relation("TopUpCreatedBy")
+  activityLogs           ActivityLog[]     @relation("ActivityActor")
+  savedViews             SavedReportView[] @relation("SavedViews")
 }
 
 model Taker {
@@ -136,6 +143,12 @@ model Taker {
   intendedUse     String?
   monthlyKgTarget Float? // BULK standing demand
   status          TakerStatus    @default(PENDING)
+
+  // Audit trail for the status itself — who approved/rejected/suspended/reinstated, when, why.
+  statusReason      String?
+  statusChangedAt   DateTime?
+  statusChangedById String?
+  statusChangedBy   User?     @relation("TakerStatusChangedBy", fields: [statusChangedById], references: [id])
 
   userId String? @unique // INDIVIDUAL → links to login; null for BULK
   user   User?   @relation("UserTaker", fields: [userId], references: [id])
@@ -151,18 +164,21 @@ model Taker {
 }
 
 model Batch {
-  id              String      @id @default(uuid())
-  reference       String      @unique // human label e.g. "2026-09-A"
-  harvestDate     DateTime
-  totalKg         Float
-  schoolReserveKg Float       @default(0) // set aside for SUSS rooftop before public/bulk
-  bagSizeKg       Float? // PENDING MENTOR: standard bag size, if bagged
-  phReading       Float? // quality/trust signal (e.g. 6.9)
-  status          BatchStatus @default(DRAFT)
-  availableFrom   DateTime? // when public claiming opens
-  availableUntil  DateTime? // when claiming/collection closes
-  pickupLocation  String? // PENDING MENTOR: exact campus spot
-  notes           String?
+  id          String   @id @default(uuid())
+  reference   String   @unique // human label e.g. "2026-09-A"
+  harvestDate DateTime
+
+  // Decimal, not Float: kg arithmetic (pool math, allowances) must not drift from
+  // rounding error. Use Prisma.Decimal in code, never coerce to JS number mid-calculation.
+  totalKg         Decimal @db.Decimal(10, 3)
+  schoolReserveKg Decimal @default(0) @db.Decimal(10, 3) // set aside for SUSS rooftop before public/bulk
+
+  phReading      Float? // quality/trust signal (e.g. 6.9)
+  status         BatchStatus @default(DRAFT)
+  availableFrom  DateTime? // when public claiming opens
+  availableUntil DateTime? // when claiming/collection closes
+  pickupLocation String?     @default("Near bin centre / composter")
+  notes          String?
 
   createdById String
   createdBy   User   @relation("BatchCreatedBy", fields: [createdById], references: [id])
@@ -173,6 +189,7 @@ model Batch {
   allocations Allocation[]
   claims      Claim[]
   pickupSlots PickupSlot[]
+  topUps      BatchTopUp[]
 }
 
 model Allocation {
@@ -184,7 +201,7 @@ model Allocation {
   takerId String
   taker   Taker  @relation(fields: [takerId], references: [id])
 
-  allocatedKg Float // agreed amount, set directly by manager (no request step)
+  allocatedKg Decimal          @db.Decimal(10, 3) // agreed amount, set directly by manager (no request step)
   status      AllocationStatus @default(PLANNED)
 
   collectedAt DateTime?
@@ -205,8 +222,8 @@ model Claim {
   takerId String
   taker   Taker  @relation(fields: [takerId], references: [id])
 
-  requestedKg Float // what the taker asked for
-  approvedKg  Float? // locked amount at approval (may be < requested)
+  requestedKg Decimal  @db.Decimal(10, 3) // what the taker asked for
+  approvedKg  Decimal? @db.Decimal(10, 3) // locked amount at approval (may be < requested)
 
   status ClaimStatus @default(PENDING)
 
@@ -229,8 +246,10 @@ model Claim {
 model PickupSlot {
   id String @id @default(uuid())
 
-  batchId String
-  batch   Batch  @relation(fields: [batchId], references: [id])
+  // Optional: a null batch is a general availability window not tied to one harvest.
+  // Traceability still holds — a Booking links to a Claim/Allocation, which links to a Batch.
+  batchId String?
+  batch   Batch?  @relation(fields: [batchId], references: [id])
 
   startTime DateTime
   endTime   DateTime
@@ -238,6 +257,7 @@ model PickupSlot {
   capacity  Int        @default(1) // max bookings — the heart of the booking system
   status    SlotStatus @default(OPEN)
   note      String?
+  seriesId  String? // groups slots created together via "Repeat"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -261,6 +281,11 @@ model Booking {
   collectionDeadline DateTime? // no-show cutoff (e.g. bookedAt + 2 days individual, +7 bulk); past it → auto-cancel, kg frees
   bookedAt           DateTime      @default(now())
   note               String?
+  cancelNote         String? // cancel-specific reason; `note` above stays for general notes
+  rescheduledAt      DateTime? // last time this booking moved to a different slot
+
+  bookedById String? // manager who booked this on behalf of a bulk taker
+  bookedBy   User?   @relation("BookingBookedBy", fields: [bookedById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -275,16 +300,65 @@ model Handover {
   bookingId String?  @unique
   booking   Booking? @relation(fields: [bookingId], references: [id])
 
-  actualKg Float // NET compost, weighed before bagging (tare excluded) — the only figure summed for reporting
+  // NET compost, weighed before bagging (tare excluded) — the only figure summed for
+  // reporting. Computed from the bag breakdown at record time, never entered independently:
+  //   actualKg = 0.5*halfKgBags + 1*oneKgBags + looseKg
+  actualKg   Decimal @db.Decimal(10, 3)
+  halfKgBags Int     @default(0)
+  oneKgBags  Int     @default(0)
+  looseKg    Decimal @default(0) @db.Decimal(10, 3)
+
   photoUrl String? // Supabase Storage — Waste Diary evidence
 
   handedOverById String
   handedOverBy   User     @relation("HandoverBy", fields: [handedOverById], references: [id])
   handedOverAt   DateTime @default(now())
 
-  takerConfirmed Boolean @default(false)
+  takerConfirmed Boolean   @default(false)
   note           String?
+  undoneAt       DateTime? // set by the 10-second undo; a soft cancel, row is kept for audit
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Audit trail for how a batch's totalKg grew after the initial log (manager tops up
+/// stock weekly, CLAUDE.md Part A). One transaction creates this row AND increments
+/// Batch.totalKg by `kg` — totalKg stays the single authoritative figure the pool math
+/// reads; this table is purely the "how did we get there" history.
+model BatchTopUp {
+  id      String  @id @default(uuid())
+  batchId String
+  batch   Batch   @relation(fields: [batchId], references: [id])
+  kg      Decimal @db.Decimal(10, 3)
+  note    String?
+
+  createdById String
+  createdBy   User   @relation("TopUpCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+/// Append-only activity feed. Schema lands now; wiring actual log-writing calls through
+/// the services is deferred post-hackathon (see Backend-Updates.md Part G) — this table
+/// exists but nothing writes to it yet.
+model ActivityLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation("ActivityActor", fields: [actorId], references: [id])
+  action     String // e.g. "claim.approved"
+  entityType String // e.g. "Claim"
+  entityId   String
+  meta       Json?
+  createdAt  DateTime @default(now())
+}
+
+/// A manager's saved reporting filter set. Nice-to-have — deferred, schema only for now.
+model SavedReportView {
+  id        String   @id @default(uuid())
+  name      String
+  filters   Json
+  userId    String
+  user      User     @relation("SavedViews", fields: [userId], references: [id])
+  createdAt DateTime @default(now())
 }

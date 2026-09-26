@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { CHANGE_SLOT_CUTOFF_HOURS } from '../common/constants';
 import {
   assertTransition,
   DomainException,
@@ -154,6 +155,8 @@ export class BookingsService {
             target.takerType,
           ),
           note: dto.note,
+          // A manager booking for someone else (a bulk org has no login at all).
+          bookedById: user.role === UserRole.MANAGER ? user.id : null,
         },
         include: bookingInclude,
       });
@@ -240,6 +243,11 @@ export class BookingsService {
       ) {
         return booking; // already there
       }
+      // A live booking can't be moved once its current slot is about to start (§D/§E).
+      // A CANCELLED one (slot scrapped by the manager) has no current slot to protect.
+      if (booking.status === BookingStatus.BOOKED) {
+        assertOutsideChangeCutoff(booking.slot.startTime, new Date());
+      }
 
       const slot = await tx.pickupSlot.findUnique({
         where: { id: dto.slotId },
@@ -253,7 +261,8 @@ export class BookingsService {
         data: {
           slotId: slot.id,
           status: BookingStatus.BOOKED,
-          bookedAt: new Date(),
+          rescheduledAt: new Date(),
+          cancelNote: null,
           collectionDeadline: collectionDeadlineFor(
             slot.endTime,
             target.taker.type,
@@ -279,7 +288,10 @@ export class BookingsService {
     );
     return this.prisma.booking.update({
       where: { id },
-      data: { status: BookingStatus.CANCELLED, note: dto.note ?? booking.note },
+      data: {
+        status: BookingStatus.CANCELLED,
+        cancelNote: dto.note ?? booking.cancelNote,
+      },
       include: bookingInclude,
     });
   }
@@ -289,7 +301,11 @@ export class BookingsService {
    * kg flows back to the pool (CLAUDE.md §11, §13). Manager-triggered or by the cron.
    */
   markNoShow(id: string): Promise<BookingDetail> {
-    return this.prisma.$transaction((tx) => this.expireBooking(tx, id));
+    // Manual path only: can't call someone a no-show before their slot even starts (§E).
+    // The cron path needs no such check — it only fires past the collection deadline.
+    return this.prisma.$transaction((tx) =>
+      this.expireBooking(tx, id, { requireSlotStarted: true }),
+    );
   }
 
   /**
@@ -331,6 +347,7 @@ export class BookingsService {
   private async expireBooking(
     tx: Prisma.TransactionClient,
     id: string,
+    opts: { requireSlotStarted?: boolean } = {},
   ): Promise<BookingDetail> {
     const booking = await tx.booking.findUnique({
       where: { id },
@@ -343,6 +360,13 @@ export class BookingsService {
       booking.status,
       BookingStatus.NO_SHOW,
     );
+    if (opts.requireSlotStarted && booking.slot.startTime > new Date()) {
+      throw new DomainException(
+        'SLOT_NOT_STARTED',
+        'A no-show can only be recorded once the pickup slot has started',
+        HttpStatus.CONFLICT,
+      );
+    }
 
     if (booking.claim && booking.claim.status === ClaimStatus.APPROVED) {
       await tx.claim.update({
@@ -444,7 +468,19 @@ export function collectionDeadlineFor(
   return deadline;
 }
 
-/** Slot must be OPEN, still ahead of us, for the same batch, and have a free seat. */
+/** A booking can't be moved within CHANGE_SLOT_CUTOFF_HOURS of its current slot's start. */
+export function assertOutsideChangeCutoff(slotStart: Date, now: Date): void {
+  const cutoff = slotStart.getTime() - CHANGE_SLOT_CUTOFF_HOURS * 3_600_000;
+  if (now.getTime() >= cutoff) {
+    throw new DomainException(
+      'CHANGE_CUTOFF_PASSED',
+      `Pickups can't be changed within ${CHANGE_SLOT_CUTOFF_HOURS} hours of the slot starting — contact the SUSS compost team`,
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+/** Slot must be OPEN, still ahead of us, for the same batch (or general), and have a free seat. */
 export function assertSlotBookable(
   slot: SlotForBooking,
   targetBatchId: string,
@@ -464,7 +500,8 @@ export function assertSlotBookable(
       HttpStatus.CONFLICT,
     );
   }
-  if (slot.batchId !== targetBatchId) {
+  // A null batch = general availability window, open to any batch's claim/allocation.
+  if (slot.batchId !== null && slot.batchId !== targetBatchId) {
     throw new DomainException(
       'SLOT_BATCH_MISMATCH',
       'This pickup slot belongs to a different batch',
