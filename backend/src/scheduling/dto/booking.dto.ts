@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
@@ -53,4 +54,13 @@ export class ListBookingsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(BookingStatus)
   status?: BookingStatus;
+
+  /** Calendar window on the slot's start time (ISO datetimes). */
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }

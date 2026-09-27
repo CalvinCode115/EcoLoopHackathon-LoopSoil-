@@ -47,6 +47,14 @@ export class CreateSlotDto {
   note?: string;
 }
 
+export class CancelSlotDto {
+  /** Shown to the people whose bookings are cancelled ("please rebook"). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  message?: string;
+}
+
 export class UpdateSlotDto extends PartialType(
   OmitType(CreateSlotDto, ['batchId'] as const),
 ) {}
@@ -66,4 +74,14 @@ export class ListSlotsQueryDto extends PaginationQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   upcoming?: boolean;
+
+  /** Calendar window: slots starting at or after `from` … */
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  /** … and before `to` (ISO datetimes). */
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }

@@ -1,30 +1,22 @@
 import type { Metadata } from "next";
-import {
-  Bricolage_Grotesque,
-  Hanken_Grotesk,
-  JetBrains_Mono,
-} from "next/font/google";
-import { Nav } from "@/components/nav";
+import { DM_Sans, Fraunces } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-provider";
 import { RouteGuard } from "@/lib/route-guard";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({
+/** Headings. The SOFT axis is loaded so `font-display` can turn it on (globals.css). */
+const fraunces = Fraunces({
   subsets: ["latin"],
-  variable: "--font-display",
+  axes: ["SOFT", "opsz"],
+  variable: "--font-fraunces",
   display: "swap",
 });
 
-const body = Hanken_Grotesk({
+/** Body and UI. */
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  variable: "--font-body",
-  display: "swap",
-});
-
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-mono",
+  axes: ["opsz"],
+  variable: "--font-dm-sans",
   display: "swap",
 });
 
@@ -34,21 +26,15 @@ export const metadata: Metadata = {
 };
 
 /**
- * Minimal shell: auth context, the single route guard, nav and a page container.
- * Font variables are set here; globals.css maps --font-display/body/mono to them.
+ * Auth context and the single route guard. Chrome (public navbar, taker top bar,
+ * manager sidebar) lives in each route group's layout, not here.
  */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${display.variable} ${body.variable} ${mono.variable}`}
-    >
+    <html lang="en" className={`${fraunces.variable} ${dmSans.variable}`}>
       <body>
         <AuthProvider>
-          <Nav />
-          <RouteGuard>
-            <div id="page">{children}</div>
-          </RouteGuard>
+          <RouteGuard>{children}</RouteGuard>
         </AuthProvider>
       </body>
     </html>

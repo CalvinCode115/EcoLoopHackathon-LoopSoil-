@@ -63,6 +63,8 @@ function setup(
     handover?: Record<string, unknown> | null;
     uploadFails?: boolean;
     txFails?: boolean;
+    /** For the walk-in path (claimId instead of bookingId). */
+    claimSource?: Record<string, unknown> | null;
   } = {},
 ) {
   const booking = opts.booking === undefined ? collectable() : opts.booking;
@@ -70,8 +72,13 @@ function setup(
     booking: {
       findUnique: jest.fn().mockResolvedValue(booking),
       update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({ id: 'bk-1' }),
     },
-    claim: { update: jest.fn().mockResolvedValue({}) },
+    claim: {
+      update: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue(opts.claimSource ?? null),
+    },
+    pickupSlot: { create: jest.fn().mockResolvedValue({ id: 's-walk' }) },
     allocation: { update: jest.fn().mockResolvedValue({}) },
     handover: {
       findMany: jest.fn().mockResolvedValue([{ reference: 'HND-2026-09-004' }]),
@@ -129,8 +136,14 @@ async function expectDomainError(
 }
 
 describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
-  // 1 half-kg bag + 2 one-kg bags + 0.3 loose = 2.8 kg NET, within 3kg x 1.10
-  const dto = { bookingId: 'bk-1', halfKgBags: 1, oneKgBags: 2, looseKg: 0.3 };
+  // 2.8 kg NET off the scale (packed as 1 half-kg bag + 2 one-kg bags + 0.3 loose), within 3kg x 1.10
+  const dto = {
+    bookingId: 'bk-1',
+    actualKg: 2.8,
+    halfKgBags: 1,
+    oneKgBags: 2,
+    looseKg: 0.3,
+  };
 
   it('creates the handover and flips booking + claim to COLLECTED inside one transaction', async () => {
     const { service, prisma, prismaWithTx } = setup();
@@ -166,6 +179,48 @@ describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
     expect(result.expectedKg).toBe(3);
     expect(result.actualKg).toBe(2.8);
     expect(result.photoUrl).toMatch(/^https:\/\/signed\//);
+  });
+
+  it('walk-in: a claim with no booking gets a closed one-off slot + booking, then collects', async () => {
+    const { service, prisma } = setup({
+      claimSource: {
+        id: 'c-1',
+        status: ClaimStatus.APPROVED,
+        approvedKg: 3,
+        batch: { id: 'b-1', reference: '2026-09-A' },
+        booking: null,
+      },
+    });
+    const { bookingId: _unused, ...rest } = dto;
+    void _unused;
+    await service.create({ ...rest, claimId: 'c-1' }, photo, manager);
+
+    expect(prisma.pickupSlot.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        capacity: 1,
+        status: 'CLOSED',
+        batchId: 'b-1',
+      }),
+    });
+    expect(prisma.booking.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        slotId: 's-walk',
+        claimId: 'c-1',
+        status: BookingStatus.BOOKED,
+      }),
+    });
+    expect(prisma.booking.update).toHaveBeenCalledWith({
+      where: { id: 'bk-1' },
+      data: { status: BookingStatus.COLLECTED },
+    });
+  });
+
+  it('needs exactly one of bookingId / claimId / allocationId', async () => {
+    const { service } = setup();
+    await expectDomainError(
+      service.create({ ...dto, claimId: 'c-1' }, photo, manager),
+      'HANDOVER_TARGET',
+    );
   });
 
   it('flips a CONFIRMED allocation the same way', async () => {
@@ -261,22 +316,18 @@ describe('HandoversService.create — the atomic COLLECTED flip (§13)', () => {
 
   it('refuses more than 10% over the approved kg, before uploading', async () => {
     const { service, storage } = setup();
-    // 3 + 0.5 = 3.5 kg > 3kg x 1.10 = 3.3
+    // 3.5 kg > 3kg x 1.10 = 3.3
     await expectDomainError(
-      service.create(
-        { bookingId: 'bk-1', oneKgBags: 3, looseKg: 0.5 },
-        photo,
-        manager,
-      ),
+      service.create({ bookingId: 'bk-1', actualKg: 3.5 }, photo, manager),
       'HANDOVER_OVER_TOLERANCE',
     );
     expect(storage.uploadHandoverPhoto).not.toHaveBeenCalled();
   });
 
-  it('refuses an empty breakdown', async () => {
+  it('refuses a zero scale reading', async () => {
     const { service } = setup();
     await expectDomainError(
-      service.create({ bookingId: 'bk-1' }, photo, manager),
+      service.create({ bookingId: 'bk-1', actualKg: 0 }, photo, manager),
       'HANDOVER_EMPTY',
     );
   });
@@ -340,5 +391,41 @@ describe('HandoversService visibility + confirmation', () => {
     await expect(service.getById('h-1', stranger)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('HandoversService.undo', () => {
+  const recorded = (secondsAgo: number) => ({
+    id: 'h-1',
+    reference: 'HND-2026-09-001',
+    photoUrl: '2026-09-A/bk-1.jpg',
+    undoneAt: null,
+    createdAt: new Date(Date.now() - secondsAgo * 1000),
+    booking: { id: 'bk-1', claimId: 'c-1', allocationId: null },
+  });
+
+  it('reverses the COLLECTED flip and detaches the handover, within 30 seconds', async () => {
+    const { service, prisma, storage } = setup({ handover: recorded(5) });
+    await service.undo('h-1');
+    expect(prisma.handover.update).toHaveBeenCalledWith({
+      where: { id: 'h-1' },
+      data: expect.objectContaining({ bookingId: null, photoUrl: null }),
+    });
+    expect(prisma.booking.update).toHaveBeenCalledWith({
+      where: { id: 'bk-1' },
+      data: { status: BookingStatus.BOOKED },
+    });
+    expect(prisma.claim.update).toHaveBeenCalledWith({
+      where: { id: 'c-1' },
+      data: { status: ClaimStatus.APPROVED, collectedAt: null },
+    });
+    expect(storage.removeHandoverPhoto).toHaveBeenCalledWith(
+      '2026-09-A/bk-1.jpg',
+    );
+  });
+
+  it('is too late after the window', async () => {
+    const { service } = setup({ handover: recorded(45) });
+    await expectDomainError(service.undo('h-1'), 'UNDO_EXPIRED');
   });
 });

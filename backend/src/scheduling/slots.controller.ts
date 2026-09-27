@@ -15,6 +15,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole, type User } from '../generated/prisma/client';
 import {
+  CancelSlotDto,
   CreateSlotDto,
   ListSlotsQueryDto,
   UpdateSlotDto,
@@ -66,8 +67,8 @@ export class SlotsController {
   @Roles(UserRole.MANAGER)
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
-  cancel(@Param('id', ParseUUIDPipe) id: string) {
-    return this.slots.cancel(id);
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelSlotDto) {
+    return this.slots.cancel(id, dto.message);
   }
 
   @Roles(UserRole.MANAGER)

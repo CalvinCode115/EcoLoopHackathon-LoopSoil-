@@ -5,6 +5,7 @@ import {
   IsInt,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   IsUUID,
   Max,
@@ -15,12 +16,36 @@ import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 /** Sent as multipart/form-data (fields + required `photo` file), so every value arrives as a string. */
 export class CreateHandoverDto {
+  /**
+   * Send exactly ONE of these. `bookingId` is the normal path. `claimId` / `allocationId`
+   * is the walk-in path (design: "No pickup booked — record anyway"): if it has no active
+   * booking, the server books it into a one-off closed "walk-in" slot first.
+   */
+  @IsOptional()
   @IsUUID()
-  bookingId: string;
+  bookingId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  claimId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  allocationId?: string;
 
   /**
-   * Bag breakdown. The server computes NET `actualKg = 0.5*halfKgBags + oneKgBags + looseKg`
-   * (tare excluded) — actualKg is never entered directly.
+   * NET compost handed over, read off the scale (tare excluded). This is the figure every
+   * report sums. May exceed the approved/allocated kg by at most 10%.
+   */
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @IsPositive()
+  @Max(1000)
+  actualKg: number;
+
+  /**
+   * How it was packed — recorded for information (the design warns in the UI when it
+   * doesn't add up to actualKg, but the server doesn't require it to).
    */
   @IsOptional()
   @Type(() => Number)
@@ -63,10 +88,15 @@ export class CreateHandoverDto {
 
 /** Manager corrections after the fact (miscounted bags, extra context). */
 export class UpdateHandoverDto {
-  /**
-   * Corrected bag breakdown — omitted fields keep their stored value and actualKg
-   * is recomputed from the result.
-   */
+  /** Corrected scale reading — omitted fields keep their stored value. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @IsPositive()
+  @Max(1000)
+  actualKg?: number;
+
+  /** Corrected packing breakdown (information only). */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -93,6 +123,13 @@ export class UpdateHandoverDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+/** GET /handovers/lookup?code=CLM-2026-091 — the pickup-pass QR, or a typed reference. */
+export class LookupHandoverQueryDto {
+  @IsString()
+  @MaxLength(60)
+  code: string;
 }
 
 export class ListHandoversQueryDto extends PaginationQueryDto {

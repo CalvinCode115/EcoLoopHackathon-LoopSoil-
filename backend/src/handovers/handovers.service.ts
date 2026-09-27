@@ -19,12 +19,14 @@ import {
   BookingStatus,
   ClaimStatus,
   Prisma,
+  SlotStatus,
   UserRole,
   type User,
 } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BOOKING_TRANSITIONS } from '../scheduling/bookings.service';
 import { photoExtension, SupabaseService } from '../supabase/supabase.service';
+import { assessLookup, type LookupIssue } from './handover-lookup';
 import type {
   CreateHandoverDto,
   ListHandoversQueryDto,
@@ -115,6 +117,74 @@ export type HandoverDetail = Omit<
   expectedKg: number | null;
 };
 
+const lookupBooking = {
+  select: {
+    id: true,
+    status: true,
+    collectionDeadline: true,
+    slot: {
+      select: { id: true, startTime: true, endTime: true, location: true },
+    },
+    handover: {
+      select: {
+        id: true,
+        reference: true,
+        actualKg: true,
+        handedOverAt: true,
+        handedOverBy: { select: { name: true } },
+      },
+    },
+  },
+} as const;
+
+const lookupTaker = {
+  select: { id: true, name: true, phone: true, type: true, status: true },
+} as const;
+
+const lookupBatch = {
+  select: { id: true, reference: true, pickupLocation: true },
+} as const;
+
+/** GET /handovers/lookup response. `canRecord` is false whenever any issue is blocking. */
+export interface HandoverLookup {
+  kind: 'CLAIM' | 'ALLOCATION';
+  id: string;
+  reference: string;
+  status: string;
+  /** Approved (claim) or allocated (allocation) kg — what should be handed over. */
+  kg: number;
+  requestedKg: number | null;
+  decidedAt: Date | null;
+  taker: {
+    id: string;
+    name: string;
+    phone: string | null;
+    type: string;
+    status: string;
+  };
+  batch: { id: string; reference: string; pickupLocation: string | null };
+  booking: {
+    id: string;
+    status: string;
+    collectionDeadline: Date | null;
+    slot: {
+      id: string;
+      startTime: Date;
+      endTime: Date;
+      location: string | null;
+    };
+  } | null;
+  handover: {
+    id: string;
+    reference: string;
+    actualKg: number;
+    handedOverAt: Date;
+    handedOverBy: string;
+  } | null;
+  canRecord: boolean;
+  issues: LookupIssue[];
+}
+
 @Injectable()
 export class HandoversService {
   constructor(
@@ -143,20 +213,30 @@ export class HandoversService {
     const halfKgBags = dto.halfKgBags ?? 0;
     const oneKgBags = dto.oneKgBags ?? 0;
     const looseKg = toDecimal(dto.looseKg ?? 0);
-    const actualKg = computeActualKg(halfKgBags, oneKgBags, looseKg);
+    const actualKg = assertActualKg(dto.actualKg);
     const handedOverAt = dto.handedOverAt
       ? new Date(dto.handedOverAt)
       : new Date();
     assertNotFuture(handedOverAt);
 
-    // Fail fast (before any upload) if the booking cannot be collected.
-    const preflight = await loadCollectableBooking(this.prisma, dto.bookingId);
-    assertWithinTolerance(actualKg, expectedKgOf(preflight));
+    // Fail fast (before any upload) if the target cannot be collected.
+    const preflight = await resolveTarget(this.prisma, dto);
+    const preflightInfo =
+      preflight.kind === 'booking'
+        ? await loadCollectableBooking(this.prisma, preflight.bookingId).then(
+            (b) => ({
+              expectedKg: expectedKgOf(b),
+              batchReference: batchReferenceOf(b),
+              pathId: b.id,
+            }),
+          )
+        : preflight;
+    assertWithinTolerance(actualKg, preflightInfo.expectedKg);
 
     const photoPath = await this.storage.uploadHandoverPhoto(
       photoObjectPath(
-        batchReferenceOf(preflight),
-        preflight.id,
+        preflightInfo.batchReference,
+        preflightInfo.pathId,
         photo.mimetype,
       ),
       photo,
@@ -165,7 +245,12 @@ export class HandoversService {
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         // Re-validate inside the transaction — state may have moved since preflight.
-        const booking = await loadCollectableBooking(tx, dto.bookingId);
+        const target = await resolveTarget(tx, dto);
+        const bookingId =
+          target.kind === 'booking'
+            ? target.bookingId
+            : await bookWalkIn(tx, target, handedOverAt, manager);
+        const booking = await loadCollectableBooking(tx, bookingId);
         assertWithinTolerance(actualKg, expectedKgOf(booking));
 
         await tx.booking.update({
@@ -213,6 +298,151 @@ export class HandoversService {
     }
   }
 
+  /**
+   * Pickup-pass QR / typed reference → claim (CLM-…) or bulk allocation (ALC-…), with
+   * everything the handover screen needs and a verdict. 404 when nothing matches.
+   */
+  async lookup(code: string, now = new Date()): Promise<HandoverLookup> {
+    const reference = code.trim();
+    const match = {
+      reference: { equals: reference, mode: 'insensitive' as const },
+    };
+    const claim = await this.prisma.claim.findFirst({
+      where: match,
+      include: {
+        taker: lookupTaker,
+        batch: lookupBatch,
+        booking: lookupBooking,
+      },
+    });
+    const allocation = claim
+      ? null
+      : await this.prisma.allocation.findFirst({
+          where: match,
+          include: {
+            taker: lookupTaker,
+            batch: lookupBatch,
+            booking: lookupBooking,
+          },
+        });
+    const row = claim ?? allocation;
+    if (!row) {
+      throw new NotFoundException(`No pickup found for "${reference}"`);
+    }
+
+    const booking = row.booking;
+    const issues = assessLookup(
+      {
+        kind: claim ? 'CLAIM' : 'ALLOCATION',
+        status: row.status,
+        takerStatus: row.taker.status,
+        booking: booking
+          ? {
+              status: booking.status,
+              collectionDeadline: booking.collectionDeadline,
+              slotStart: booking.slot.startTime,
+            }
+          : null,
+        hasHandover: !!booking?.handover,
+      },
+      now,
+    );
+    const kg = claim
+      ? (claim.approvedKg ?? claim.requestedKg).toNumber()
+      : allocation!.allocatedKg.toNumber();
+
+    return {
+      kind: claim ? 'CLAIM' : 'ALLOCATION',
+      id: row.id,
+      reference: row.reference,
+      status: row.status,
+      kg,
+      requestedKg: claim ? claim.requestedKg.toNumber() : null,
+      decidedAt: claim ? claim.decidedAt : null,
+      taker: row.taker,
+      batch: row.batch,
+      booking: booking
+        ? {
+            id: booking.id,
+            status: booking.status,
+            collectionDeadline: booking.collectionDeadline,
+            slot: booking.slot,
+          }
+        : null,
+      handover: booking?.handover
+        ? {
+            id: booking.handover.id,
+            reference: booking.handover.reference,
+            actualKg: booking.handover.actualKg.toNumber(),
+            handedOverAt: booking.handover.handedOverAt,
+            handedOverBy: booking.handover.handedOverBy.name,
+          }
+        : null,
+      canRecord: !issues.some((i) => i.blocking),
+      issues,
+    };
+  }
+
+  /**
+   * The success screen's Undo, within UNDO_WINDOW_MS of recording. Reverses the COLLECTED
+   * flip in one transaction: booking → BOOKED, claim → APPROVED / allocation → CONFIRMED.
+   * The handover row is kept for audit (`undoneAt`) but detached from the booking so the
+   * pickup can be recorded again; its photo is deleted.
+   */
+  async undo(
+    id: string,
+    now = new Date(),
+  ): Promise<{ id: string; reference: string; undoneAt: Date }> {
+    const existing = await this.prisma.handover.findUnique({
+      where: { id },
+      include: {
+        booking: { select: { id: true, claimId: true, allocationId: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Handover not found');
+    if (existing.undoneAt) {
+      throw new DomainException(
+        'HANDOVER_UNDONE',
+        'This handover was already undone',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (now.getTime() - existing.createdAt.getTime() > UNDO_WINDOW_MS) {
+      throw new DomainException(
+        'UNDO_EXPIRED',
+        'Too late to undo — edit the handover instead',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const booking = existing.booking;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.handover.update({
+        where: { id },
+        data: { undoneAt: now, bookingId: null, photoUrl: null },
+      });
+      if (!booking) return;
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: BookingStatus.BOOKED },
+      });
+      if (booking.claimId) {
+        await tx.claim.update({
+          where: { id: booking.claimId },
+          data: { status: ClaimStatus.APPROVED, collectedAt: null },
+        });
+      }
+      if (booking.allocationId) {
+        await tx.allocation.update({
+          where: { id: booking.allocationId },
+          data: { status: AllocationStatus.CONFIRMED, collectedAt: null },
+        });
+      }
+    });
+    if (existing.photoUrl)
+      await this.storage.removeHandoverPhoto(existing.photoUrl);
+    return { id, reference: existing.reference, undoneAt: now };
+  }
+
   /** Attach (or replace) the photo after the fact — the integrity follow-up. */
   async attachPhoto(id: string, photo: UploadedPhoto): Promise<HandoverDetail> {
     const existing = await this.prisma.handover.findUnique({
@@ -249,6 +479,7 @@ export class HandoversService {
     user: User,
   ): Promise<Paginated<HandoverDetail>> {
     const where: Prisma.HandoverWhereInput = {
+      undoneAt: null, // an undone handover never happened (row kept only for audit)
       ...(q.from || q.to
         ? {
             handedOverAt: {
@@ -332,10 +563,20 @@ export class HandoversService {
     });
     if (!existing) throw new NotFoundException('Handover not found');
 
+    if (existing.undoneAt) {
+      throw new DomainException(
+        'HANDOVER_UNDONE',
+        'This handover was undone and can no longer be edited',
+        HttpStatus.CONFLICT,
+      );
+    }
     const halfKgBags = dto.halfKgBags ?? existing.halfKgBags;
     const oneKgBags = dto.oneKgBags ?? existing.oneKgBags;
     const looseKg = toDecimal(dto.looseKg ?? existing.looseKg);
-    const actualKg = computeActualKg(halfKgBags, oneKgBags, looseKg);
+    const actualKg =
+      dto.actualKg !== undefined
+        ? assertActualKg(dto.actualKg)
+        : toDecimal(existing.actualKg);
     if (existing.booking) {
       assertWithinTolerance(actualKg, expectedKgOf(existing.booking));
     }
@@ -453,24 +694,157 @@ export async function loadCollectableBooking(
   return booking;
 }
 
-/** NET kg from the bag breakdown: 0.5 x half-kg bags + 1 x one-kg bags + loose. */
-export function computeActualKg(
-  halfKgBags: number,
-  oneKgBags: number,
-  looseKg: DecimalValue,
-): Prisma.Decimal {
-  const total = toDecimal(halfKgBags)
-    .times(0.5)
-    .plus(oneKgBags)
-    .plus(toDecimal(looseKg));
-  if (!total.greaterThan(0)) {
+const WALK_IN_MINUTES = 30;
+
+interface WalkInTarget {
+  kind: 'walk-in';
+  claimId: string | null;
+  allocationId: string | null;
+  /** A leftover booking row (e.g. its slot was cancelled) — claimId/allocationId are unique on Booking, so it is reused. */
+  existingBookingId: string | null;
+  batchId: string;
+  batchReference: string;
+  expectedKg: DecimalValue;
+  pathId: string;
+}
+
+type HandoverTarget = { kind: 'booking'; bookingId: string } | WalkInTarget;
+
+/**
+ * Which booking a handover goes against. A claim/allocation that already has a BOOKED
+ * booking just uses it; otherwise it is a walk-in, validated here (APPROVED claim /
+ * CONFIRMED allocation, not handed over yet) before anything is written.
+ */
+export async function resolveTarget(
+  db: Prisma.TransactionClient | PrismaService,
+  dto: Pick<CreateHandoverDto, 'bookingId' | 'claimId' | 'allocationId'>,
+): Promise<HandoverTarget> {
+  const given = [dto.bookingId, dto.claimId, dto.allocationId].filter(Boolean);
+  if (given.length !== 1) {
     throw new DomainException(
-      'HANDOVER_EMPTY',
-      'Enter at least one bag or some loose kg',
+      'HANDOVER_TARGET',
+      'Send exactly one of bookingId, claimId or allocationId',
     );
+  }
+  if (dto.bookingId) return { kind: 'booking', bookingId: dto.bookingId };
+
+  const booking = {
+    select: {
+      id: true,
+      status: true,
+      handover: { select: { reference: true } },
+    },
+  } as const;
+  const batch = { select: { id: true, reference: true } } as const;
+  const source = dto.claimId
+    ? await db.claim.findUnique({
+        where: { id: dto.claimId },
+        select: { id: true, status: true, approvedKg: true, batch, booking },
+      })
+    : await db.allocation.findUnique({
+        where: { id: dto.allocationId },
+        select: { id: true, status: true, allocatedKg: true, batch, booking },
+      });
+  if (!source) {
+    throw new NotFoundException(
+      dto.claimId ? 'Claim not found' : 'Allocation not found',
+    );
+  }
+  if (source.booking?.handover) {
+    throw new DomainException(
+      'HANDOVER_EXISTS',
+      `This was already handed over as ${source.booking.handover.reference}`,
+      HttpStatus.CONFLICT,
+    );
+  }
+  if (source.booking?.status === BookingStatus.BOOKED) {
+    return { kind: 'booking', bookingId: source.booking.id };
+  }
+  if ('approvedKg' in source) {
+    assertTransition(
+      'Claim',
+      CLAIM_TRANSITIONS,
+      source.status,
+      ClaimStatus.COLLECTED,
+    );
+  } else {
+    assertTransition(
+      'Allocation',
+      ALLOCATION_TRANSITIONS,
+      source.status,
+      AllocationStatus.COLLECTED,
+    );
+  }
+  return {
+    kind: 'walk-in',
+    claimId: dto.claimId ?? null,
+    allocationId: dto.allocationId ?? null,
+    existingBookingId: source.booking?.id ?? null,
+    batchId: source.batch.id,
+    batchReference: source.batch.reference,
+    expectedKg:
+      'approvedKg' in source ? source.approvedKg! : source.allocatedKg,
+    pathId: source.id,
+  };
+}
+
+/**
+ * Every booking needs a slot, so a walk-in gets its own: capacity 1, CLOSED (nobody else
+ * can book it), starting at the handover time. The booking is then BOOKED so the normal
+ * COLLECTED flip applies. Runs inside the handover transaction.
+ */
+async function bookWalkIn(
+  tx: Prisma.TransactionClient,
+  target: WalkInTarget,
+  handedOverAt: Date,
+  manager: User,
+): Promise<string> {
+  const slot = await tx.pickupSlot.create({
+    data: {
+      batchId: target.batchId,
+      startTime: handedOverAt,
+      endTime: new Date(handedOverAt.getTime() + WALK_IN_MINUTES * 60_000),
+      capacity: 1,
+      status: SlotStatus.CLOSED,
+      note: 'Walk-in handover (no pickup was booked)',
+    },
+  });
+  if (target.existingBookingId) {
+    await tx.booking.update({
+      where: { id: target.existingBookingId },
+      data: {
+        slotId: slot.id,
+        status: BookingStatus.BOOKED,
+        cancelNote: null,
+        rescheduledAt: handedOverAt,
+      },
+    });
+    return target.existingBookingId;
+  }
+  const booking = await tx.booking.create({
+    data: {
+      slotId: slot.id,
+      claimId: target.claimId,
+      allocationId: target.allocationId,
+      status: BookingStatus.BOOKED,
+      bookedById: manager.id,
+      note: 'Walk-in handover',
+    },
+  });
+  return booking.id;
+}
+
+/** The scale reading must be a positive NET kg (the DTO checks too; this guards direct calls). */
+export function assertActualKg(actualKg: number | undefined): Prisma.Decimal {
+  const total = toDecimal(actualKg ?? 0);
+  if (!total.greaterThan(0)) {
+    throw new DomainException('HANDOVER_EMPTY', 'Enter the kg handed over');
   }
   return total;
 }
+
+/** How long after recording a handover can still be undone (the success screen's Undo). */
+export const UNDO_WINDOW_MS = 30_000;
 
 /** actualKg may exceed the approved/allocated kg by at most HANDOVER_OVER_TOLERANCE (10%). */
 export function assertWithinTolerance(

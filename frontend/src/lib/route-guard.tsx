@@ -33,6 +33,9 @@ const TAKER_PATHS = new Set([
   "/claim",
   "/my-claims",
   "/book-pickup",
+  "/change-pickup",
+  "/pickup-pass",
+  "/profile",
 ]);
 
 export function homeFor(role: UserRole): string {

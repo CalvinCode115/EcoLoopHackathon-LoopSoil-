@@ -2,64 +2,136 @@ import Link from "next/link";
 import type {
   AnchorHTMLAttributes,
   ButtonHTMLAttributes,
+  ComponentProps,
   ReactNode,
 } from "react";
+import { cn } from "@/lib/cn";
+import { Spinner } from "./spinner";
 
-type Variant = "primary" | "secondary" | "ghost";
+/**
+ * Button/Primary, Button/Secondary, Button/Link from the design system, plus the
+ * destructive variant used in the taker/manager kits. 48px tall, 12px radius; `sm` is
+ * the 44px size used in the navbar and dense rows, `lg` the 52px hero-CTA size. One primary action per view.
+ */
+export type ButtonVariant =
+  "primary" | "secondary" | "link" | "danger" | "ghost";
+export type ButtonSize = "lg" | "md" | "sm";
 
 const base =
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-6 py-3 " +
-  "font-body text-[0.95rem] font-semibold tracking-tight transition-transform duration-150 " +
-  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 " +
-  "focus-visible:outline-forest-500 active:scale-[0.98] disabled:cursor-not-allowed " +
-  "disabled:opacity-50 disabled:active:scale-100";
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control " +
+  "font-sans text-body font-semibold leading-6 no-underline transition-colors " +
+  "disabled:opacity-50 aria-disabled:opacity-50 aria-disabled:pointer-events-none";
 
-const variants: Record<Variant, string> = {
-  // Solid forest green, off-white text: passes contrast, is the one locked accent color.
-  primary: "bg-forest-500 text-canvas hover:bg-forest-700",
-  // Green outline on canvas: reads as the "secondary" action, same one-hue family.
-  // forest-500 (not forest-700) here deliberately — it's the one value already
-  // verified 4.5:1+ against canvas in BOTH light and dark mode.
+const variants: Record<ButtonVariant, string> = {
+  primary: "bg-leaf text-cream shadow-button hover:bg-deep",
   secondary:
-    "border border-forest-500 text-forest-500 hover:bg-forest-500 hover:text-canvas",
-  ghost: "text-ink-soft hover:text-ink",
+    "bg-transparent text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage",
+  // Deep-green text with a leaf-green underline — AA contrast on beige.
+  link: "bg-transparent px-2! text-deep underline decoration-leaf decoration-2 underline-offset-4 hover:bg-sage",
+  danger: "bg-error text-cream hover:bg-danger-ink",
+  ghost: "bg-transparent text-deep hover:bg-sage",
+};
+
+const sizes: Record<ButtonSize, string> = {
+  lg: "h-13 px-6",
+  md: "h-12 px-6",
+  sm: "h-11 px-5",
 };
 
 interface CommonProps {
-  variant?: Variant;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  /** Shows a spinner and disables the button (e.g. "Approving…"). */
+  loading?: boolean;
+  /** Icon before the label. */
+  icon?: ReactNode;
+  /** Icon after the label (e.g. a forward arrow on "Get Started"). */
+  iconAfter?: ReactNode;
+  fullWidth?: boolean;
   children: ReactNode;
 }
 
-type ButtonAsButton = CommonProps &
+type AsButton = CommonProps &
   ButtonHTMLAttributes<HTMLButtonElement> & { href?: undefined };
-type ButtonAsLink = CommonProps &
+type AsLink = CommonProps &
   AnchorHTMLAttributes<HTMLAnchorElement> & { href: string };
 
-/** One button primitive so every CTA on the shared pages shares shape, size and states. */
-export function Button({
-  variant = "primary",
-  className = "",
-  children,
-  ...props
-}: ButtonAsButton | ButtonAsLink) {
-  const classes = `${base} ${variants[variant]} ${className}`;
+export function Button(props: AsButton | AsLink) {
+  const {
+    variant = "primary",
+    size = "md",
+    loading = false,
+    icon,
+    iconAfter,
+    fullWidth,
+    className,
+    children,
+    ...rest
+  } = props;
+  const classes = cn(
+    base,
+    variants[variant],
+    sizes[size],
+    fullWidth && "w-full",
+    className,
+  );
+  const content = (
+    <>
+      {loading ? <Spinner size={18} /> : icon}
+      <span>{children}</span>
+      {!loading && iconAfter}
+    </>
+  );
 
-  if ("href" in props && props.href !== undefined) {
-    const { href, ...rest } =
-      props as AnchorHTMLAttributes<HTMLAnchorElement> & {
+  if (rest.href !== undefined) {
+    const { href, ...anchor } =
+      rest as AnchorHTMLAttributes<HTMLAnchorElement> & {
         href: string;
       };
     return (
-      <Link href={href} className={classes} {...rest}>
-        {children}
+      <Link href={href} className={classes} {...anchor}>
+        {content}
       </Link>
     );
   }
 
+  const {
+    disabled,
+    type = "button",
+    ...button
+  } = rest as ButtonHTMLAttributes<HTMLButtonElement>;
   return (
     <button
+      type={type}
       className={classes}
-      {...(props as ButtonHTMLAttributes<HTMLButtonElement>)}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...button}
+    >
+      {content}
+    </button>
+  );
+}
+
+/** Square 44px icon-only button (menus, close, account). Always pass `label`. Accepts `ref`. */
+export function IconButton({
+  label,
+  className,
+  children,
+  ...rest
+}: ComponentProps<"button"> & {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={cn(
+        "flex size-11 items-center justify-center rounded-full text-deep transition-colors hover:bg-sage",
+        className,
+      )}
+      {...rest}
     >
       {children}
     </button>

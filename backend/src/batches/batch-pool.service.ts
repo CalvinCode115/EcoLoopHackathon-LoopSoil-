@@ -36,6 +36,16 @@ export interface BatchPool {
   approvedClaimKg: number;
   /** What an individual can still claim. Can be negative only if data was edited unsafely. */
   kgRemaining: number;
+  /**
+   * Display only: kg of COLLECTED claims + COLLECTED allocations (already inside
+   * approvedClaimKg / allocatedKg above). Lets the manager's stock bar split "claimed"
+   * from "collected". Plays no part in kgRemaining.
+   */
+  collectedKg: number;
+  /** Of which: COLLECTED claims (inside approvedClaimKg). */
+  collectedClaimKg: number;
+  /** Of which: COLLECTED allocations (inside allocatedKg). */
+  collectedAllocationKg: number;
 }
 
 export const ACTIVE_ALLOCATION_STATUSES: readonly AllocationStatus[] = [
@@ -55,6 +65,9 @@ export interface PoolSums {
   allocatedKg: DecimalValue;
   pendingClaimKg: DecimalValue;
   approvedClaimKg: DecimalValue;
+  /** Optional, display only — see BatchPool.collectedKg. */
+  collectedClaimKg?: DecimalValue;
+  collectedAllocationKg?: DecimalValue;
 }
 
 /** Pure math — unit-tested against the §12 worked example. Genuine Decimal arithmetic. */
@@ -80,6 +93,15 @@ export function computePool(
     pendingClaimKg: pendingClaimKg.toNumber(),
     approvedClaimKg: approvedClaimKg.toNumber(),
     kgRemaining: kgRemaining.toNumber(),
+    collectedKg: roundDecimal(
+      toDecimal(sums.collectedClaimKg ?? 0).plus(
+        sums.collectedAllocationKg ?? 0,
+      ),
+    ).toNumber(),
+    collectedClaimKg: roundDecimal(sums.collectedClaimKg ?? 0).toNumber(),
+    collectedAllocationKg: roundDecimal(
+      sums.collectedAllocationKg ?? 0,
+    ).toNumber(),
   };
 }
 
@@ -116,13 +138,19 @@ export class BatchPoolService {
     const sums = new Map<string, PoolSums>(
       ids.map((id) => [
         id,
-        { allocatedKg: zero, pendingClaimKg: zero, approvedClaimKg: zero },
+        {
+          allocatedKg: zero,
+          pendingClaimKg: zero,
+          approvedClaimKg: zero,
+          collectedClaimKg: zero,
+          collectedAllocationKg: zero,
+        },
       ]),
     );
 
     if (ids.length > 0) {
       const allocations = await db.allocation.groupBy({
-        by: ['batchId'],
+        by: ['batchId', 'status'],
         where: {
           batchId: { in: ids },
           status: { in: [...ACTIVE_ALLOCATION_STATUSES] },
@@ -131,7 +159,13 @@ export class BatchPoolService {
       });
       for (const row of allocations) {
         const s = sums.get(row.batchId)!;
-        s.allocatedKg = toDecimal(row._sum.allocatedKg ?? 0);
+        const kg = row._sum.allocatedKg ?? 0;
+        s.allocatedKg = toDecimal(s.allocatedKg).plus(kg);
+        if (row.status === AllocationStatus.COLLECTED) {
+          s.collectedAllocationKg = toDecimal(
+            s.collectedAllocationKg ?? 0,
+          ).plus(kg);
+        }
       }
 
       const claims = await db.claim.groupBy({
@@ -152,6 +186,11 @@ export class BatchPoolService {
           s.approvedClaimKg = toDecimal(s.approvedClaimKg).plus(
             row._sum.approvedKg ?? 0,
           );
+          if (row.status === ClaimStatus.COLLECTED) {
+            s.collectedClaimKg = toDecimal(s.collectedClaimKg ?? 0).plus(
+              row._sum.approvedKg ?? 0,
+            );
+          }
         }
       }
     }

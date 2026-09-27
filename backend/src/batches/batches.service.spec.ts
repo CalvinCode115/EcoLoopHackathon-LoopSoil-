@@ -69,14 +69,22 @@ function setup(existing = batch()) {
       }),
       delete: jest.fn().mockResolvedValue(existing),
     },
-    batchTopUp: { create: jest.fn().mockResolvedValue({}) },
+    batchTopUp: {
+      create: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     claim: { count: jest.fn().mockResolvedValue(0) },
     allocation: { count: jest.fn().mockResolvedValue(0) },
   };
   // Interactive transaction: run the callback against the same mock client.
   const prismaWithTx = {
     ...prisma,
-    $transaction: jest.fn((fn: (tx: typeof prisma) => unknown) => fn(prisma)),
+    // Array form (batched writes) just awaits each one.
+    $transaction: jest.fn((arg: unknown) =>
+      Array.isArray(arg)
+        ? Promise.all(arg)
+        : (arg as (tx: typeof prisma) => unknown)(prisma),
+    ),
   };
   const pool = {
     forBatch: jest.fn().mockResolvedValue(emptyPool),
@@ -314,15 +322,15 @@ describe('BatchesService.topUp (Part A: weekly stock top-up)', () => {
 });
 
 describe('BatchesService.remove', () => {
-  it('only deletes an unused DRAFT', async () => {
+  it('deletes an unused batch, even once published, but never a completed or used one', async () => {
     const { service, prisma } = setup();
     prisma.batch.findUnique.mockResolvedValue(
       batch({
-        status: BatchStatus.OPEN,
+        status: BatchStatus.COMPLETED,
         _count: { allocations: 0, claims: 0, pickupSlots: 0 },
       }),
     );
-    await expectDomainError(service.remove('b-1'), 'BATCH_NOT_DRAFT');
+    await expectDomainError(service.remove('b-1'), 'BATCH_COMPLETED');
 
     prisma.batch.findUnique.mockResolvedValue(
       batch({ _count: { allocations: 1, claims: 0, pickupSlots: 0 } }),
@@ -330,9 +338,15 @@ describe('BatchesService.remove', () => {
     await expectDomainError(service.remove('b-1'), 'BATCH_IN_USE');
 
     prisma.batch.findUnique.mockResolvedValue(
-      batch({ _count: { allocations: 0, claims: 0, pickupSlots: 0 } }),
+      batch({
+        status: BatchStatus.OPEN,
+        _count: { allocations: 0, claims: 0, pickupSlots: 0 },
+      }),
     );
     await service.remove('b-1');
+    expect(prisma.batchTopUp.deleteMany).toHaveBeenCalledWith({
+      where: { batchId: 'b-1' },
+    });
     expect(prisma.batch.delete).toHaveBeenCalledWith({ where: { id: 'b-1' } });
   });
 });

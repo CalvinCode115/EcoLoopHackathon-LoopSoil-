@@ -171,7 +171,21 @@ export class BookingsService {
     const where: Prisma.BookingWhereInput = {
       slotId: q.slotId,
       status: q.status,
-      ...(q.batchId ? { slot: { batchId: q.batchId } } : {}),
+      ...(q.batchId || q.from || q.to
+        ? {
+            slot: {
+              batchId: q.batchId,
+              ...(q.from || q.to
+                ? {
+                    startTime: {
+                      gte: q.from ? new Date(q.from) : undefined,
+                      lt: q.to ? new Date(q.to) : undefined,
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
       ...(user.role === UserRole.TAKER
         ? { claim: { taker: { userId: user.id } } }
         : {}),

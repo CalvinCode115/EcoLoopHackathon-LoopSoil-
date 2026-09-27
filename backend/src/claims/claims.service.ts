@@ -62,6 +62,7 @@ const claimInclude = {
       status: true,
       harvestDate: true,
       pickupLocation: true,
+      availableUntil: true, // the taker's "Book by" date on My Claims
     },
   },
   booking: {
@@ -69,6 +70,7 @@ const claimInclude = {
       id: true,
       status: true,
       collectionDeadline: true,
+      bookedAt: true, // manager claim timeline: "Pickup booked"
       slot: {
         select: { id: true, startTime: true, endTime: true, location: true },
       },

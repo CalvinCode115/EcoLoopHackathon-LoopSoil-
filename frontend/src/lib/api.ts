@@ -48,13 +48,15 @@ async function request<T>(
   body?: unknown,
 ): Promise<T> {
   const hasBody = body !== undefined;
+  // FormData (photo uploads) sets its own multipart boundary header.
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
       ...(await authHeader()),
-      ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...(hasBody && !isForm ? { "Content-Type": "application/json" } : {}),
     },
-    body: hasBody ? JSON.stringify(body) : undefined,
+    body: !hasBody ? undefined : isForm ? body : JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -82,6 +84,8 @@ async function request<T>(
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
+  /** multipart/form-data, e.g. POST /handovers with the `photo` file. */
+  postForm: <T>(path: string, form: FormData) => request<T>("POST", path, form),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T = void>(path: string) => request<T>("DELETE", path),
 };

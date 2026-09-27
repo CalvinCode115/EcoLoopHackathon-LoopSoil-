@@ -23,7 +23,7 @@ If you already built against the old API, these are the breaking changes:
 | `PATCH /takers/:id { status }` | Status can't be set there any more. Use `/approve`, `/decline`, `/suspend`, `/reinstate` (§5). |
 | One claim per batch, up to the pool | **0.1–1 kg per person per batch, in 0.1 kg steps**, across all their claims (§8) |
 | `POST /bookings/:id/reschedule` | `PATCH /bookings/:id` |
-| Handover `actualKg` typed in | Send the **bag breakdown**; the server computes `actualKg` (§10) |
+| Handover `actualKg` computed from bags | Send **`actualKg` off the scale**; the bag breakdown is information only (§10) |
 | Handover photo optional | **Photo required** |
 | — | New: batch top-up, bulk claim approval, "needs booking" list, book on behalf, general pickup slots, `GET /manager/dashboard` |
 
@@ -161,8 +161,8 @@ Supabase sign-up/login  →  GET /auth/me  →  { role: "TAKER" | "MANAGER" }
 
 | Route | Role | Body / notes |
 |---|---|---|
-| `GET /takers?type=&status=&search=` | MANAGER | Vetting queue: `?type=INDIVIDUAL&status=PENDING`. Bulk orgs: `?type=BULK`. `search` matches name or email. |
-| `GET /takers/:id` | MANAGER | |
+| `GET /takers?type=&status=&search=` | MANAGER | Vetting queue: `?type=INDIVIDUAL&status=PENDING`. Bulk orgs: `?type=BULK`. `search` matches name, email or phone. Each row carries `statusChangedBy { id, name }` and `stats { collectedKg, claims, allocations, noShows, lastActiveAt, monthAllocatedKg, monthCollectedKg }` (this month = SG calendar month). |
+| `GET /takers/:id` | MANAGER | Same shape as a list row (with `stats`). |
 | `POST /takers/:id/approve` | MANAGER | `{ statusReason? }` — `PENDING` or `REJECTED` → `APPROVED` |
 | `POST /takers/:id/decline` | MANAGER | `{ statusReason }` **required** — `PENDING` → `REJECTED` |
 | `POST /takers/:id/suspend` | MANAGER | `{ statusReason }` **required** — `APPROVED` → `SUSPENDED` |
@@ -327,14 +327,20 @@ Show `cancelNote` on cancelled bookings so the taker knows why.
 The manager records "I handed this person X kg, here's the photo." Every number in the
 reports comes from here.
 
-**`POST /handovers`** *(MANAGER)* — **`multipart/form-data`, not JSON**:
+**`POST /handovers`** *(MANAGER)* — **`multipart/form-data`, not JSON**.
+Send exactly one of `bookingId`, `claimId` or `allocationId` (else `HANDOVER_TARGET`). With
+`claimId`/`allocationId` and no BOOKED booking, it's a **walk-in**: inside the same transaction the
+server creates a one-off pickup slot (capacity 1, `CLOSED`, starting at `handedOverAt`, note
+"Walk-in handover") and books the claim/allocation into it (re-using a cancelled booking row if
+there is one), then does the normal COLLECTED flip. If it already has a BOOKED booking, that is used.
 
 ```ts
 import { supabase } from "@/lib/supabase";
 
 const form = new FormData();
-form.append("bookingId", bookingId);
-form.append("halfKgBags", "2");      // number of 0.5 kg bags
+form.append("bookingId", bookingId); // OR claimId / allocationId (walk-in) — exactly one
+form.append("actualKg", "2.8");       // REQUIRED — NET kg off the scale
+form.append("halfKgBags", "2");      // number of 0.5 kg bags (information)
 form.append("oneKgBags", "1");       // number of 1 kg bags
 form.append("looseKg", "0.3");       // unbagged remainder, weighed
 form.append("photo", photoFile);     // REQUIRED
@@ -350,9 +356,9 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/handovers`, {
 });
 ```
 
-- The server computes **`actualKg = 0.5 × halfKgBags + oneKgBags + looseKg`**. Show this live
-  in the form as the manager types, but never send it.
-- Bag counts default to 0; the total must be more than 0.
+- **`actualKg` is the scale reading** (NET, tare excluded), sent by the form; it must be more
+  than 0 and is the figure every report sums. The bag breakdown (`halfKgBags`, `oneKgBags`,
+  `looseKg`) records how it was packed — the form warns when it doesn't add up, the server doesn't.
 - **Tolerance:** `actualKg` may be at most **10% over** the approved (claim) or allocated
   (allocation) kg — e.g. approved 1 kg → max 1.1 kg. Warn in the form before submitting.
 - **Photo:** required. JPEG/PNG/WebP/HEIC, max 10 MB.
@@ -361,11 +367,13 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/handovers`, {
 
 | Route | Role | Body / notes |
 |---|---|---|
+| `GET /handovers/lookup?code=CLM-2026-091` | MANAGER | Scan / type a reference (claim `CLM-…` or allocation `ALC-…`, case-insensitive) → `{ kind, id, reference, status, kg, requestedKg, decidedAt, taker{…status}, batch, booking{…slot} \| null, handover \| null, canRecord, issues[] }`. Each issue is `{ code, blocking, message }`: blocking `ALREADY_COLLECTED`, `RELEASED`, `NOT_APPROVED`, `TAKER_SUSPENDED`; warnings `NO_BOOKING` (records as a walk-in), `PAST_DEADLINE`, `WRONG_DAY`. `canRecord` = no blocking issue. **404** when nothing matches. |
 | `POST /handovers/:id/photo` | MANAGER | multipart, `photo` field only — replace the photo |
 | `GET /handovers?batchId=&takerId=&from=&to=&missingPhoto=true` | any | Manager: all. Taker: own. |
 | `GET /handovers/:id` | any | |
 | `POST /handovers/:id/confirm` | TAKER (own) | Taker confirms they received it |
-| `PATCH /handovers/:id` | MANAGER | `{ halfKgBags?, oneKgBags?, looseKg?, note? }` — fix a miscount. Omitted fields keep their value; `actualKg` is recomputed and re-checked against the tolerance. JSON, so `api.patch` works. |
+| `PATCH /handovers/:id` | MANAGER | `{ actualKg?, halfKgBags?, oneKgBags?, looseKg?, note? }` — fix a miscount. Omitted fields keep their value; `actualKg` is re-checked against the tolerance. JSON, so `api.patch` works. |
+| `POST /handovers/:id/undo` | MANAGER | Within **30 s** of recording (`UNDO_EXPIRED` after). Booking → BOOKED, claim → APPROVED / allocation → CONFIRMED, photo deleted. The row stays for audit with `undoneAt` set and is detached from the booking, so the pickup can be recorded again. Undone handovers never appear in lists or reports. |
 
 Every handover response includes: `actualKg`, `halfKgBags`, `oneKgBags`, `looseKg`,
 `expectedKg` (approved/allocated amount — show both if they differ), `photoUrl` (a **signed
@@ -418,6 +426,9 @@ Read-only. Everything sums **`actualKg` from handovers only** — never requeste
 | Route | Role | Notes |
 |---|---|---|
 | `GET /reporting/impact?from=&to=` | any | Totals plus breakdowns by taker type, category, batch and month |
+| `GET /reporting/analytics?from=&to=` | MANAGER | Dashboard / Reports KPIs. Default period: this month to date (SG). Returns `kpis` — `kgDiverted`, `kgGenerated`, `distributionRate`, `collectionRate`, `noShowRate`, `activeTakers`, `batchesCompleted`, each `{ value, previous }` (previous = the same-length period just before; rates 0–100 or null) — plus `sparklines` (7 Monday-start weeks ending with the week of `to`), `weekly` (`{ weekStart, kg, previousKg }` across the period) and `byGroup` (`INDIVIDUAL` or a bulk category → kg). |
+| `GET /reporting/report?from=&to=&batchId=&takerType=&category=` | MANAGER | Every Reports section for the period + filters: `allTime` headline, `daily` / `previousDaily` kg, `topRecipients`, `batches` (reserve / bulk / individual / unclaimed split, % distributed), `generatedVsCollected` per month, claims `funnel` + `rejectionReasons` / `cancellationReasons`, `responseTime`, `claimSizes`, `pickups` (fill rate, weekday × time `heatmap`, weekly collected / no-shows), `takers` (returning vs first-time, new per month, `bulkPartners` vs monthly target scaled to the period). `/reporting/analytics` takes the same filters. |
+| `GET /reporting/views` · `POST /reporting/views` `{ name, filters }` · `DELETE /reporting/views/:id` | MANAGER | Saved Reports views — each manager sees only their own. |
 | `GET /reporting/top-takers?limit=10&from=&to=` | MANAGER | Who has collected the most |
 | `GET /reporting/pipeline` | MANAGER | Same object as the dashboard's `pipeline` |
 | `GET /reporting/waste-diary.csv?from=&to=` | MANAGER | CSV download, one row per handover. Needs the auth header, so fetch it with the token and save the blob (a plain `<a href>` won't send the token). |
@@ -472,10 +483,8 @@ Always safe to show `message`. Use `code` when the screen should react.
 
 - **Notifications** (announcements, reminders) — manual for the pilot (the manager WhatsApps
   people using the phone number on the claim).
-- **Later, only if time allows:** pickup pass + QR lookup (`GET /handovers/lookup`), the
-  10-second handover undo, sidebar search, repeating slot series, reports CSV per section /
-  saved views, activity log. The database already has columns for some of these (`undoneAt`,
-  `seriesId`) — ignore them in the UI for now.
+- **Later, only if time allows:** sidebar search, repeating slot series, reports CSV per section /
+  saved views, activity log. The database already has columns for some of these (`seriesId`) — ignore them in the UI for now.
 
 ---
 
@@ -544,12 +553,14 @@ BOOKINGS      POST   /bookings                    (owner/MANAGER)
 
 HANDOVERS     POST   /handovers                   (MANAGER, multipart, photo required)
               POST   /handovers/:id/photo         (MANAGER, multipart)
+              GET    /handovers/lookup?code=      (MANAGER)
               GET    /handovers
               GET    /handovers/:id
               POST   /handovers/:id/confirm       (owner)
               PATCH  /handovers/:id               (MANAGER)
 
 MANAGER       GET    /manager/dashboard           (MANAGER)
+              GET    /reporting/analytics         (MANAGER)
 
 REPORTING     GET    /reporting/impact
               GET    /reporting/top-takers        (MANAGER)

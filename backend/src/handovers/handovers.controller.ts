@@ -21,6 +21,7 @@ import { PHOTO_MAX_BYTES } from '../supabase/supabase.service';
 import {
   CreateHandoverDto,
   ListHandoversQueryDto,
+  LookupHandoverQueryDto,
   UpdateHandoverDto,
 } from './dto/handover.dto';
 import { HandoversService, type UploadedPhoto } from './handovers.service';
@@ -62,6 +63,16 @@ export class HandoversController {
     return this.handovers.attachPhoto(id, photo);
   }
 
+  /**
+   * Scan / type a reference at the bin → the claim or allocation, its booking and whether
+   * it can be handed over now. Declared before `:id` so "lookup" isn't parsed as a UUID.
+   */
+  @Roles(UserRole.MANAGER)
+  @Get('lookup')
+  lookup(@Query() q: LookupHandoverQueryDto) {
+    return this.handovers.lookup(q.code);
+  }
+
   /** Manager: all (filter by batch, taker, date range, missingPhoto). Taker: own. */
   @Get()
   list(@CurrentUser() user: User, @Query() q: ListHandoversQueryDto) {
@@ -71,6 +82,14 @@ export class HandoversController {
   @Get(':id')
   getById(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.handovers.getById(id, user);
+  }
+
+  /** Undo a handover recorded moments ago (30-second window). */
+  @Roles(UserRole.MANAGER)
+  @Post(':id/undo')
+  @HttpCode(HttpStatus.OK)
+  undo(@Param('id', ParseUUIDPipe) id: string) {
+    return this.handovers.undo(id);
   }
 
   /** The taker confirms receipt of their own handover. */

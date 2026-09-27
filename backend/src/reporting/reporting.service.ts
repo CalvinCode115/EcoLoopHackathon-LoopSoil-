@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   BatchPoolService,
   type BatchPool,
@@ -12,9 +12,23 @@ import {
   Prisma,
   TakerStatus,
   TakerType,
+  type User,
 } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { ImpactQueryDto } from './dto/reporting-query.dto';
+import {
+  aggregateAnalytics,
+  type AnalyticsReport,
+} from './analytics.aggregate';
+import type {
+  CreateSavedViewDto,
+  ImpactQueryDto,
+  ReportQueryDto,
+} from './dto/reporting-query.dto';
+import {
+  buildReport,
+  type ReportData,
+  type ReportInput,
+} from './report.builder';
 import {
   aggregateImpact,
   topTakers,
@@ -197,6 +211,261 @@ export class ReportingService {
     return topTakers(rows.map(toImpactRow), limit);
   }
 
+  /**
+   * KPI cards, sparklines and trends for a period (default: this month to date, SG time),
+   * narrowed by the Reports filters (batch, taker type, category) when given.
+   */
+  async analytics(
+    q: ReportQueryDto,
+    now = new Date(),
+  ): Promise<AnalyticsReport> {
+    const period = defaultPeriod(q, now);
+    const rows = await this.loadReportRows(q);
+    return aggregateAnalytics(
+      {
+        handovers: rows.handovers.map((h) => ({
+          actualKg: h.actualKg,
+          handedOverAt: h.handedOverAt,
+          takerId: h.takerId,
+          group: !h.takerType
+            ? 'OTHER'
+            : h.takerType === 'INDIVIDUAL'
+              ? 'INDIVIDUAL'
+              : (h.category ?? 'OTHER'),
+        })),
+        outcomes: rows.outcomes.map((o) => ({ status: o.status, at: o.at })),
+        // totalKg already includes top-ups, so the harvest itself is total − Σ top-ups.
+        stockAdded: rows.batches.flatMap((b) => {
+          const top = b.topUps.reduce((s, t) => s + t.kg, 0);
+          return [{ kg: b.totalKg - top, at: b.harvestDate }, ...b.topUps];
+        }),
+        completedAt: rows.completedAt,
+      },
+      period,
+    );
+  }
+
+  /** Every Reports section for a period + filters (see report.builder.ts). */
+  async report(q: ReportQueryDto, now = new Date()): Promise<ReportData> {
+    const rows = await this.loadReportRows(q);
+    return buildReport(rows, defaultPeriod(q, now));
+  }
+
+  /**
+   * All the rows the Reports + analytics need, already narrowed by the filters. Loaded in
+   * full (pilot scale — tens to hundreds of rows); a SQL rollup is the scale-up step.
+   */
+  private async loadReportRows(
+    q: ReportQueryDto,
+  ): Promise<ReportInput & { completedAt: Date[] }> {
+    const takerSel = {
+      select: { id: true, name: true, type: true, category: true },
+    } as const;
+    const batchSel = { select: { id: true } } as const;
+    const [handovers, claims, slots, outcomes, batches, takers] =
+      await Promise.all([
+        this.prisma.handover.findMany({
+          where: LIVE_HANDOVER,
+          select: {
+            actualKg: true,
+            handedOverAt: true,
+            booking: {
+              select: {
+                slot: { select: { batch: batchSel } },
+                claim: { select: { taker: takerSel, batch: batchSel } },
+                allocation: { select: { taker: takerSel, batch: batchSel } },
+              },
+            },
+          },
+        }),
+        this.prisma.claim.findMany({
+          select: {
+            batchId: true,
+            requestedKg: true,
+            approvedKg: true,
+            status: true,
+            rejectionReason: true,
+            cancellationReason: true,
+            submittedAt: true,
+            decidedAt: true,
+            taker: { select: { type: true, category: true } },
+            booking: { select: { status: true } },
+          },
+        }),
+        this.prisma.pickupSlot.findMany({
+          where: q.batchId ? { batchId: q.batchId } : {},
+          select: {
+            startTime: true,
+            capacity: true,
+            status: true,
+            _count: {
+              select: {
+                bookings: {
+                  where: {
+                    status: {
+                      in: [BookingStatus.BOOKED, BookingStatus.COLLECTED],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.booking.findMany({
+          where: {
+            status: { in: [BookingStatus.COLLECTED, BookingStatus.NO_SHOW] },
+          },
+          select: {
+            status: true,
+            slot: { select: { startTime: true, batchId: true } },
+            claim: {
+              select: { approvedKg: true, batchId: true, taker: takerSel },
+            },
+            allocation: {
+              select: { allocatedKg: true, batchId: true, taker: takerSel },
+            },
+          },
+        }),
+        this.prisma.batch.findMany({
+          where: q.batchId ? { id: q.batchId } : {},
+          include: { topUps: { select: { kg: true, createdAt: true } } },
+        }),
+        this.prisma.taker.findMany({
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            category: true,
+            createdAt: true,
+            monthlyKgTarget: true,
+          },
+        }),
+      ]);
+
+    const anyTakerFilter = !!(q.takerType || q.category);
+    const takerOk = (
+      t: { type: TakerType; category: string | null } | null | undefined,
+    ) =>
+      !anyTakerFilter ||
+      (!!t &&
+        (!q.takerType || t.type === q.takerType) &&
+        (!q.category || t.category === q.category));
+    const pools = await this.pools.forBatches(batches);
+
+    const handoverRows: ReportInput['handovers'] = [];
+    for (const h of handovers) {
+      const src = h.booking?.claim ?? h.booking?.allocation ?? null;
+      const t = src?.taker ?? null;
+      const rowBatch = h.booking?.slot.batch?.id ?? src?.batch.id ?? null;
+      if (q.batchId && rowBatch !== q.batchId) continue;
+      if (!takerOk(t)) continue;
+      handoverRows.push({
+        actualKg: decimalToNumber(h.actualKg),
+        handedOverAt: h.handedOverAt,
+        takerId: t?.id ?? null,
+        takerName: t?.name ?? null,
+        takerType: t?.type ?? null,
+        category: t?.category ?? null,
+        batchId: rowBatch,
+        source: h.booking?.claim
+          ? 'CLAIM'
+          : h.booking?.allocation
+            ? 'ALLOCATION'
+            : null,
+      });
+    }
+
+    const outcomeRows: ReportInput['outcomes'] = [];
+    for (const b of outcomes) {
+      const src = b.claim ?? b.allocation;
+      const rowBatch = b.slot.batchId ?? src?.batchId ?? null;
+      if (q.batchId && rowBatch !== q.batchId) continue;
+      if (!takerOk(src?.taker)) continue;
+      outcomeRows.push({
+        status: b.status as 'COLLECTED' | 'NO_SHOW',
+        at: b.slot.startTime,
+        kg: b.claim
+          ? decimalToNumber(b.claim.approvedKg ?? 0)
+          : decimalToNumber(b.allocation?.allocatedKg ?? 0),
+        takerId: src?.taker.id ?? null,
+      });
+    }
+
+    return {
+      handovers: handoverRows,
+      claims: claims
+        .filter(
+          (c) => (!q.batchId || c.batchId === q.batchId) && takerOk(c.taker),
+        )
+        .map((c) => ({
+          batchId: c.batchId,
+          requestedKg: decimalToNumber(c.requestedKg),
+          approvedKg:
+            c.approvedKg == null ? null : decimalToNumber(c.approvedKg),
+          status: c.status,
+          rejectionReason: c.rejectionReason,
+          cancellationReason: c.cancellationReason,
+          submittedAt: c.submittedAt,
+          decidedAt: c.decidedAt,
+          bookingStatus: c.booking?.status ?? null,
+        })),
+      slots: slots.map((s) => ({
+        startTime: s.startTime,
+        capacity: s.capacity,
+        status: s.status,
+        bookedCount: s._count.bookings,
+      })),
+      outcomes: outcomeRows,
+      batches: batches.map((b) => ({
+        id: b.id,
+        reference: b.reference,
+        harvestDate: b.harvestDate,
+        status: b.status,
+        totalKg: decimalToNumber(b.totalKg),
+        topUps: b.topUps.map((t) => ({
+          kg: decimalToNumber(t.kg),
+          at: t.createdAt,
+        })),
+        schoolReserveKg: decimalToNumber(b.schoolReserveKg),
+        kgRemaining: pools.get(b.id)?.kgRemaining ?? 0,
+        availableFrom: b.availableFrom,
+      })),
+      takers: takers.filter((t) => takerOk(t)),
+      // No completedAt column: a COMPLETED batch's last update is when it was completed.
+      completedAt: batches
+        .filter((b) => b.status === BatchStatus.COMPLETED)
+        .map((b) => b.updatedAt),
+    };
+  }
+
+  // ─── Saved views (each manager sees only their own) ───────────────────────
+
+  listViews(user: User) {
+    return this.prisma.savedReportView.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, filters: true, createdAt: true },
+    });
+  }
+
+  saveView(user: User, dto: CreateSavedViewDto) {
+    return this.prisma.savedReportView.create({
+      data: {
+        name: dto.name.trim(),
+        filters: dto.filters as Prisma.InputJsonValue,
+        userId: user.id,
+      },
+      select: { id: true, name: true, filters: true, createdAt: true },
+    });
+  }
+
+  async deleteView(user: User, id: string): Promise<void> {
+    const { count } = await this.prisma.savedReportView.deleteMany({
+      where: { id, userId: user.id },
+    });
+    if (!count) throw new NotFoundException('Saved view not found');
+  }
+
   /** One row per handover — the Waste Diary evidence the hackathon asks for. */
   async wasteDiaryCsv(q: ImpactQueryDto): Promise<string> {
     const rows = await this.loadHandovers(toPeriod(q), 'asc');
@@ -347,5 +616,16 @@ function toDiaryRow(h: HandoverForReport): DiaryRow {
     takerConfirmed: h.takerConfirmed,
     handedOverBy: h.handedOverBy.name,
     note: h.note,
+  };
+}
+
+/** Reports / analytics default: this month to date (Singapore). */
+function defaultPeriod(q: ImpactQueryDto, now: Date): { from: Date; to: Date } {
+  const { year, month } = yearMonthSG(now);
+  return {
+    from: q.from
+      ? new Date(q.from)
+      : new Date(`${year}-${month}-01T00:00:00+08:00`),
+    to: q.to ? new Date(q.to) : now,
   };
 }

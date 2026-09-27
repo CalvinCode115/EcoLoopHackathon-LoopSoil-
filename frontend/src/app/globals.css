@@ -1,65 +1,168 @@
 @import "tailwindcss";
 
 /*
- * LoopSoil design tokens: a single green family against white/off-white, no second
- * hue. These are placeholder brand colors in the spirit of "SUSS green" — not verified
- * institutional hex codes. Swap the values below when real brand guidelines are
- * available; nothing else needs to change.
+ * LoopSoil design tokens — taken from the Claude Design canvas "LoopSoil — Public pages"
+ * (Design system, Taker components and Manager components boards). Tailwind v4 reads its
+ * theme from this @theme block, so this IS the Tailwind config: every token below becomes
+ * a utility (bg-leaf, text-deep, shadow-card, rounded-control, font-display, …).
+ *
+ * The design is light-only; there is no dark palette to map.
  */
 @theme {
-  --color-canvas: #f7f8f4;
-  --color-canvas-raised: #ffffff;
-  /* A near-black with a whisper of green in it, so even "black" text belongs to the
-     same one-hue family rather than reading as a separate neutral gray. */
-  --color-ink: #0e1613;
-  --color-ink-soft: #4b5b56;
-  --color-ink-faint: #7c8985;
+  /* ── Core palette ─────────────────────────────────────────────────────── */
+  --color-beige: #f5efe3; /* page background */
+  --color-cream: #fbf8f1; /* cards, surfaces */
+  --color-leaf: #4f7a3a; /* primary action, focus, success */
+  --color-deep: #2f4a24; /* headings, footer, primary hover */
+  --color-sage: #dce5cf; /* tints, hover */
+  --color-soil: #7a5a3c; /* accent, illustrations, no-show */
+  --color-ink: #2b2b24; /* body text */
+  --color-muted: #6b6b5e; /* helper text, captions */
+  --color-error: #b4432f; /* errors, destructive */
+  --color-edge: #8f8e80; /* input hairline (3:1) */
 
-  --color-forest-900: #0c2419;
-  --color-forest-700: #1b4332;
-  /* Darker than a "pure" brand green on purpose: this is the one locked interactive
-     accent (buttons, links, focus rings) and needs 4.5:1 against --color-canvas for
-     WCAG AA body text — verified, not eyeballed. See the dark-mode override below,
-     which uses a brighter value since it needs contrast against a dark canvas instead. */
-  --color-forest-500: #1e7a45;
-  --color-forest-300: #8fcba2;
-  --color-forest-100: #e3f2e7;
+  /* ── Status tints (badges, banners) ───────────────────────────────────── */
+  --color-amber-tint: #f6e2b8;
+  --color-amber-ink: #6b4508;
+  --color-danger-tint: #f6e3de;
+  --color-danger-ink: #8e3222; /* also the destructive-button hover */
+  --color-grey-tint: #e6e3da;
+  --color-grey-ink: #55554a;
 
-  --color-line: rgba(14, 22, 19, 0.1);
-  --color-line-strong: rgba(14, 22, 19, 0.18);
+  /* ── Surfaces used by lists and loading states ────────────────────────── */
+  --color-row-hover: #f3eee3;
+  --color-skeleton: #e9e2d2;
+  --color-disabled: #efebe1; /* disabled/busy input fill */
 
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+
+  /* Named sizes from the type scale (size / line-height). */
+  --text-h1: 3rem; /* 48 */
+  --text-h1--line-height: 3.5rem; /* 56 */
+  --text-h1-tablet: 2.5rem; /* 40 */
+  --text-h1-tablet--line-height: 3rem;
+  --text-h1-mobile: 2.125rem; /* 34 */
+  --text-h1-mobile--line-height: 2.625rem;
+  --text-h2: 2.5rem; /* 40 */
+  --text-h2--line-height: 3rem;
+  --text-h2-tablet: 2.25rem; /* 36 */
+  --text-h2-tablet--line-height: 2.75rem;
+  --text-h2-mobile: 1.875rem; /* 30 */
+  --text-h2-mobile--line-height: 2.375rem;
+  --text-h3: 1.375rem; /* 22 */
+  --text-h3--line-height: 1.875rem;
+  --text-body: 1rem; /* 16 */
+  --text-body--line-height: 1.625rem; /* 26 */
+  --text-small: 0.875rem; /* 14 */
+  --text-small--line-height: 1.25rem; /* 20 */
+  --text-eyebrow: 0.75rem; /* 12, uppercase labels */
+  --text-eyebrow--line-height: 1rem;
+
+  /* ── Shape ────────────────────────────────────────────────────────────── */
+  --radius-control: 12px; /* inputs, buttons */
+  --radius-card: 16px;
+
+  --shadow-card:
+    0 1px 2px rgba(47, 74, 36, 0.06), 0 8px 24px rgba(47, 74, 36, 0.08);
+  --shadow-button: 0 1px 2px rgba(47, 74, 36, 0.25);
+  --shadow-topbar: 0 1px 0 rgba(47, 74, 36, 0.08);
+  /* Framed photos (hero collage) — deeper than cards so they lift off the page. */
+  --shadow-photo:
+    0 2px 4px rgba(20, 32, 16, 0.1), 0 24px 56px rgba(20, 32, 16, 0.22);
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  --container-content: 1200px; /* max content width (max-w-content) */
+
+  --animate-shimmer: ls-shimmer 1.4s linear infinite;
 }
 
-/* Dark mode: values only, re-using the tokens registered above. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #0a120e;
-    --color-canvas-raised: #101b16;
-    --color-ink: #f4f6f2;
-    --color-ink-soft: #b9c4be;
-    --color-ink-faint: #7e8b85;
-
-    --color-forest-900: #0a2018;
-    --color-forest-700: #1e5138;
-    --color-forest-500: #3fc172;
-    --color-forest-300: #2c5c3e;
-    --color-forest-100: #12261b;
-
-    --color-line: rgba(244, 246, 242, 0.12);
-    --color-line-strong: rgba(244, 246, 242, 0.2);
+@keyframes ls-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 
-body {
-  background: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: var(--font-body);
+/* Pickup pass "window open now" dot (design: pp-pulse). */
+@keyframes pp-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(79, 122, 58, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(79, 122, 58, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(79, 122, 58, 0);
+  }
 }
 
-/* Respect prefers-reduced-motion globally; components opt into motion, not out of it. */
+@layer base {
+  body {
+    background: var(--color-beige);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+
+  /* One focus style everywhere: 3px leaf-green outline. */
+  a:focus-visible,
+  button:focus-visible,
+  [role="tab"]:focus-visible {
+    outline: 3px solid var(--color-leaf);
+    outline-offset: 3px;
+  }
+  input[type="checkbox"]:focus-visible,
+  input[type="radio"]:focus-visible {
+    outline: 3px solid var(--color-leaf);
+    outline-offset: 2px;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* Fraunces with its SOFT axis on — every display heading in the design uses it. */
+@utility font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "SOFT" 100;
+  letter-spacing: -0.01em;
+}
+
+/* Page gutters: 24 mobile, 32 tablet, 40 desktop, inside a 1200px column. */
+@utility page-container {
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: 24px;
+  @media (width >= 48rem) {
+    padding-inline: 32px;
+  }
+  @media (width >= 64rem) {
+    padding-inline: 40px;
+  }
+}
+
+/* Loading placeholder: shimmer between two beige tones (never a spinner for page loads). */
+@utility skeleton {
+  background: linear-gradient(90deg, #e9e2d2 25%, #f3eee3 50%, #e9e2d2 75%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+  border-radius: 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -69,7 +69,7 @@ export class TakersController {
 
   @Get(':id')
   getById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.takers.getById(id);
+    return this.takers.getDetail(id);
   }
 
   /** Profile fields only — vetting decisions go through the actions below. */

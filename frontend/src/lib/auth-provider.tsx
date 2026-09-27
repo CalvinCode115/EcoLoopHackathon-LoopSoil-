@@ -36,7 +36,12 @@ interface AuthContextValue {
   loading: boolean;
   /** Why `user` is null despite a session — suspended account, API unreachable, etc. */
   error: string | null;
-  signIn(email: string, password: string): Promise<void>;
+  /** `remember: false` ends the session when the browser is closed ("Remember me" unticked). */
+  signIn(
+    email: string,
+    password: string,
+    options?: { remember?: boolean },
+  ): Promise<void>;
   signOut(): Promise<void>;
   /** Re-fetch /auth/me (e.g. after the taker completes registration). */
   refreshUser(): void;
@@ -51,6 +56,39 @@ interface LoadedUser {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// "Remember me": Supabase always persists the session in localStorage. When the user
+// opts out, we flag it in localStorage and mark the live tab in sessionStorage (which the
+// browser clears on close). A fresh browser session that finds the flag but no mark
+// signs out before restoring anything. Storage can throw (private mode) — then we just
+// behave as "remember".
+const SESSION_ONLY_KEY = "loopsoil:session-only";
+const ALIVE_KEY = "loopsoil:session-alive";
+
+function rememberChoice(remember: boolean): void {
+  try {
+    if (remember) {
+      localStorage.removeItem(SESSION_ONLY_KEY);
+    } else {
+      localStorage.setItem(SESSION_ONLY_KEY, "1");
+      sessionStorage.setItem(ALIVE_KEY, "1");
+    }
+  } catch {
+    // storage unavailable — fall back to remembering
+  }
+}
+
+/** True when the last login opted out of "remember me" and the browser has since restarted. */
+function sessionShouldExpire(): boolean {
+  try {
+    return (
+      localStorage.getItem(SESSION_ONLY_KEY) === "1" &&
+      sessionStorage.getItem(ALIVE_KEY) !== "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
@@ -59,10 +97,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 1. Restore the Supabase session and follow every later change (login, refresh, logout).
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
+    void (async () => {
+      if (sessionShouldExpire()) {
+        await supabase.auth.signOut();
+        rememberChoice(true);
+      }
+      const { data } = await supabase.auth.getSession();
       setSession(data.session);
       setSessionLoaded(true);
-    });
+    })();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
@@ -108,12 +151,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       error,
-      async signIn(email, password) {
+      async signIn(email, password, options) {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (signInError) throw new Error(signInError.message);
+        rememberChoice(options?.remember ?? true);
         // onAuthStateChange delivers the session → /auth/me loads → RouteGuard redirects.
       },
       async signOut() {

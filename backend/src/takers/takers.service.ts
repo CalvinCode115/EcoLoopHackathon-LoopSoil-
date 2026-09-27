@@ -4,6 +4,8 @@ import {
   DomainException,
 } from '../common/errors/domain.exception';
 import { pageArgs, paginated, type Paginated } from '../common/pagination';
+import { decimalToNumber } from '../common/kg';
+import { yearMonthSG } from '../common/reference';
 import {
   AllocationStatus,
   BookingStatus,
@@ -32,6 +34,25 @@ import type { UpdateTakerDto } from './dto/update-taker.dto';
  * reconsider and approve a previously-declined applicant, the same way `/approve`
  * also covers first-time vetting from PENDING.
  */
+/** Per-taker figures for the manager's Takers screen (list columns + drawer). */
+export interface TakerStats {
+  /** Σ Handover.actualKg to this taker (live handovers only). */
+  collectedKg: number;
+  claims: number;
+  allocations: number;
+  noShows: number;
+  /** Latest claim, allocation or handover — null if they've done nothing yet. */
+  lastActiveAt: Date | null;
+  /** Bulk: kg allocated (not cancelled) and collected this calendar month (SG). */
+  monthAllocatedKg: number;
+  monthCollectedKg: number;
+}
+
+export type TakerWithStats = Taker & {
+  stats: TakerStats;
+  statusChangedBy: { id: string; name: string } | null;
+};
+
 export const TAKER_STATUS_TRANSITIONS: Record<
   TakerStatus,
   readonly TakerStatus[]
@@ -65,8 +86,8 @@ export class TakersService {
     });
   }
 
-  /** `status=PENDING&type=INDIVIDUAL` is the manager's vetting queue. */
-  async list(q: ListTakersQueryDto): Promise<Paginated<Taker>> {
+  /** `status=PENDING&type=INDIVIDUAL` is the manager's vetting queue. Rows carry `stats`. */
+  async list(q: ListTakersQueryDto): Promise<Paginated<TakerWithStats>> {
     const where: Prisma.TakerWhereInput = {
       type: q.type,
       status: q.status,
@@ -75,6 +96,7 @@ export class TakersService {
             OR: [
               { name: { contains: q.search, mode: 'insensitive' } },
               { email: { contains: q.search, mode: 'insensitive' } },
+              { phone: { contains: q.search.replace(/\s/g, '') } },
             ],
           }
         : {}),
@@ -84,10 +106,128 @@ export class TakersService {
       this.prisma.taker.findMany({
         where,
         orderBy: { name: 'asc' },
+        include: { statusChangedBy: { select: { id: true, name: true } } },
         ...pageArgs(q),
       }),
     ]);
-    return paginated(data, total, q);
+    return paginated(await this.withStats(data), total, q);
+  }
+
+  /** GET /takers/:id — the taker plus their stats (the manager's drawer). */
+  async getDetail(id: string): Promise<TakerWithStats> {
+    const taker = await this.prisma.taker.findUnique({
+      where: { id },
+      include: { statusChangedBy: { select: { id: true, name: true } } },
+    });
+    if (!taker) throw new NotFoundException('Taker not found');
+    return (await this.withStats([taker]))[0];
+  }
+
+  /** Batched stats for a page of takers — a handful of grouped queries, no N+1. */
+  private async withStats<
+    T extends Taker & { statusChangedBy: { id: string; name: string } | null },
+  >(takers: T[], now = new Date()): Promise<(T & { stats: TakerStats })[]> {
+    const ids = takers.map((t) => t.id);
+    if (!ids.length) return [];
+    const { year, month } = yearMonthSG(now);
+    const monthStart = new Date(`${year}-${month}-01T00:00:00+08:00`);
+    const [claims, allocations, noShows, handovers] = await Promise.all([
+      this.prisma.claim.groupBy({
+        by: ['takerId'],
+        where: { takerId: { in: ids } },
+        _count: { _all: true },
+        _max: { submittedAt: true },
+      }),
+      this.prisma.allocation.findMany({
+        where: { takerId: { in: ids } },
+        select: {
+          takerId: true,
+          allocatedKg: true,
+          status: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          status: BookingStatus.NO_SHOW,
+          OR: [
+            { claim: { takerId: { in: ids } } },
+            { allocation: { takerId: { in: ids } } },
+          ],
+        },
+        select: {
+          claim: { select: { takerId: true } },
+          allocation: { select: { takerId: true } },
+        },
+      }),
+      this.prisma.handover.findMany({
+        where: {
+          undoneAt: null,
+          booking: {
+            OR: [
+              { claim: { takerId: { in: ids } } },
+              { allocation: { takerId: { in: ids } } },
+            ],
+          },
+        },
+        select: {
+          actualKg: true,
+          handedOverAt: true,
+          booking: {
+            select: {
+              claim: { select: { takerId: true } },
+              allocation: { select: { takerId: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return takers.map((t) => {
+      const c = claims.find((x) => x.takerId === t.id);
+      const allocs = allocations.filter((a) => a.takerId === t.id);
+      const hs = handovers.filter(
+        (h) =>
+          (h.booking?.claim?.takerId ?? h.booking?.allocation?.takerId) ===
+          t.id,
+      );
+      const dates = [
+        c?._max.submittedAt,
+        ...allocs.map((a) => a.createdAt),
+        ...hs.map((h) => h.handedOverAt),
+      ].filter((d): d is Date => !!d);
+      const round = (n: number) => Math.round(n * 1000) / 1000;
+      return {
+        ...t,
+        stats: {
+          collectedKg: round(
+            hs.reduce((s, h) => s + decimalToNumber(h.actualKg), 0),
+          ),
+          claims: c?._count._all ?? 0,
+          allocations: allocs.length,
+          noShows: noShows.filter(
+            (b) => (b.claim?.takerId ?? b.allocation?.takerId) === t.id,
+          ).length,
+          lastActiveAt: dates.length
+            ? new Date(Math.max(...dates.map((d) => d.getTime())))
+            : null,
+          monthAllocatedKg: round(
+            allocs
+              .filter(
+                (a) =>
+                  a.status !== AllocationStatus.CANCELLED &&
+                  a.createdAt >= monthStart,
+              )
+              .reduce((s, a) => s + decimalToNumber(a.allocatedKg), 0),
+          ),
+          monthCollectedKg: round(
+            hs
+              .filter((h) => h.handedOverAt >= monthStart)
+              .reduce((s, h) => s + decimalToNumber(h.actualKg), 0),
+          ),
+        },
+      };
+    });
   }
 
   async getById(id: string): Promise<Taker> {

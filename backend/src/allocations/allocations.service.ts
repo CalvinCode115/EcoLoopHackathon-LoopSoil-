@@ -33,10 +33,25 @@ export const ALLOCATION_TRANSITIONS: Record<
 };
 
 const allocationInclude = {
-  taker: { select: { id: true, name: true, category: true, type: true } },
-  batch: {
-    select: { id: true, reference: true, status: true, harvestDate: true },
+  taker: {
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      type: true,
+      monthlyKgTarget: true, // batch detail: "monthly target vs allocated"
+    },
   },
+  batch: {
+    select: {
+      id: true,
+      reference: true,
+      status: true,
+      harvestDate: true,
+      availableUntil: true, // "Book by" on the Pickups needs-booking list
+    },
+  },
+  booking: { select: { id: true, status: true } }, // needs-booking = no BOOKED booking
 } satisfies Prisma.AllocationInclude;
 
 export type AllocationDetail = Prisma.AllocationGetPayload<{

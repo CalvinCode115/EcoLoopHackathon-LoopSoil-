@@ -36,6 +36,16 @@ export type BatchWithPool = Batch & {
    *  Only meaningful for an APPROVED individual taker — null for managers, unregistered
    *  or unapproved takers (they cannot claim regardless of the number). */
   allowanceLeftKg: number | null;
+  /** Manager GET /batches/:id only. */
+  createdBy?: { id: string; name: string } | null;
+  /** Manager GET /batches/:id only, newest first. */
+  topUps?: {
+    id: string;
+    kg: number;
+    note: string | null;
+    createdAt: Date;
+    createdBy: { id: string; name: string };
+  }[];
 };
 
 /** DRAFT → OPEN → CLOSED → COMPLETED, with reopen. COMPLETED is terminal. */
@@ -138,7 +148,36 @@ export class BatchesService {
       throw new NotFoundException('Batch not found'); // drafts are invisible to takers
     }
     const allowances = await this.allowancesFor([id], user);
-    return this.withPool(batch, undefined, allowances.get(id) ?? null);
+    const detail = await this.withPool(
+      batch,
+      undefined,
+      allowances.get(id) ?? null,
+    );
+    if (user.role !== UserRole.MANAGER) return detail;
+
+    // Manager batch detail: who logged it + the top-up history (Overview tab).
+    const [createdBy, topUps] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: batch.createdById },
+        select: { id: true, name: true },
+      }),
+      this.prisma.batchTopUp.findMany({
+        where: { batchId: id },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          kg: true,
+          note: true,
+          createdAt: true,
+          createdBy: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+    return {
+      ...detail,
+      createdBy,
+      topUps: topUps.map((t) => ({ ...t, kg: t.kg.toNumber() })),
+    };
   }
 
   async update(id: string, dto: UpdateBatchDto): Promise<BatchWithPool> {
@@ -281,7 +320,11 @@ export class BatchesService {
     return this.setStatus(batch, BatchStatus.COMPLETED);
   }
 
-  /** Only an unused DRAFT can be deleted; anything else is closed/completed instead. */
+  /**
+   * Delete a batch logged by mistake — Draft, Open or Closed — as long as nothing points
+   * at it yet (no claims, allocations or pickup slots). Top-ups are just its own stock
+   * history, so they go with it. Anything in use, or COMPLETED, is kept for the audit trail.
+   */
   async remove(id: string): Promise<void> {
     const batch = await this.prisma.batch.findUnique({
       where: { id },
@@ -292,22 +335,30 @@ export class BatchesService {
       },
     });
     if (!batch) throw new NotFoundException('Batch not found');
-    if (batch.status !== BatchStatus.DRAFT) {
+    if (batch.status === BatchStatus.COMPLETED) {
       throw new DomainException(
-        'BATCH_NOT_DRAFT',
-        'Only DRAFT batches can be deleted — close or complete it instead',
+        'BATCH_COMPLETED',
+        'A completed batch is kept for the records and cannot be deleted',
         HttpStatus.CONFLICT,
       );
     }
     const { allocations, claims, pickupSlots } = batch._count;
     if (allocations + claims + pickupSlots > 0) {
+      const parts = [
+        claims && plural(claims, 'claim'),
+        allocations && plural(allocations, 'allocation'),
+        pickupSlots && plural(pickupSlots, 'pickup slot'),
+      ].filter(Boolean);
       throw new DomainException(
         'BATCH_IN_USE',
-        `Batch has ${allocations} allocation(s), ${claims} claim(s) and ${pickupSlots} pickup slot(s)`,
+        `${batch.reference} can’t be deleted — it has ${parts.join(', ')}. Remove those first, or close the batch instead.`,
         HttpStatus.CONFLICT,
       );
     }
-    await this.prisma.batch.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.batchTopUp.deleteMany({ where: { batchId: id } }),
+      this.prisma.batch.delete({ where: { id } }),
+    ]);
   }
 
   private async transition(
@@ -442,4 +493,8 @@ function assertWindow(from?: string, until?: string): void {
 
 function toDate(value: string | undefined): Date | undefined {
   return value === undefined ? undefined : new Date(value);
+}
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }

@@ -118,6 +118,14 @@ export class SlotsService {
           }
         : { status: q.status }),
       ...(q.upcoming ? { endTime: { gte: new Date() } } : {}),
+      ...(q.from || q.to
+        ? {
+            startTime: {
+              gte: q.from ? new Date(q.from) : undefined,
+              lt: q.to ? new Date(q.to) : undefined,
+            },
+          }
+        : {}),
     };
     const [total, rows] = await Promise.all([
       this.prisma.pickupSlot.count({ where }),
@@ -195,7 +203,7 @@ export class SlotsService {
    * Scrap the slot. Its BOOKED bookings are cancelled so the people can rebook — their
    * claims / allocations stay APPROVED / CONFIRMED, nothing is lost (CLAUDE.md §10).
    */
-  cancel(id: string): Promise<SlotDetail> {
+  cancel(id: string, message?: string): Promise<SlotDetail> {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.pickupSlot.findUnique({ where: { id } });
       if (!current) throw new NotFoundException('Pickup slot not found');
@@ -211,7 +219,8 @@ export class SlotsService {
         // exactly the "needs booking" state (GET /claims/needs-booking), derived not stored.
         data: {
           status: BookingStatus.CANCELLED,
-          cancelNote: 'Slot cancelled by manager — please rebook',
+          cancelNote:
+            message?.trim() || 'Slot cancelled by manager — please rebook',
         },
       });
       const row = await tx.pickupSlot.update({
