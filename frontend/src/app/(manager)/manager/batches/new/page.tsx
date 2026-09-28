@@ -282,7 +282,7 @@ export default function NewBatchPage() {
             />
           </Fieldset>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-5 shadow-[inset_0_1px_0_rgba(107,107,94,0.14)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-5 shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14)]">
             <Link
               href="/manager/batches"
               className="text-[15px] font-bold text-deep"
@@ -384,7 +384,7 @@ function LivePreview({
             ? `${formatKg(reserveKg)}kg school reserve, ${formatKg(publicKg)}kg public pool`
             : "No stock yet"
         }
-        className="flex h-3.5 gap-0.5 overflow-hidden rounded-[7px] bg-[#ECE6D8]"
+        className="flex h-3.5 gap-0.5 overflow-hidden rounded-[7px] bg-track"
       >
         {valid && reserveKg > 0 && (
           <span style={{ flex: reserveKg, background: STOCK_COLORS.reserve }} />
@@ -419,7 +419,7 @@ function LivePreview({
         />
       </div>
 
-      <div className="flex flex-col gap-2 rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+      <div className="flex flex-col gap-2 rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
         <span className="text-xs font-bold uppercase tracking-[0.06em] text-muted">
           Takers will see
         </span>
@@ -471,7 +471,7 @@ function Row({ children }: { children: ReactNode }) {
 }
 
 function Divider() {
-  return <div aria-hidden className="h-px bg-[rgba(107,107,94,0.14)]" />;
+  return <div aria-hidden className="h-px bg-[rgba(var(--rgb-hair),0.14)]" />;
 }
 
 function LegendItem({
@@ -504,7 +504,7 @@ function PreviewRow({
 }) {
   return (
     <div
-      className={`flex justify-between py-2 text-small shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)] ${strong ? "font-bold" : ""}`}
+      className={`flex justify-between py-2 text-small shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)] ${strong ? "font-bold" : ""}`}
     >
       <span>{label}</span>
       <span>{value}</span>

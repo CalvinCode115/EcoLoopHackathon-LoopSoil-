@@ -91,7 +91,7 @@ export function RejectClaimSheet({
           }
           maxLength={500}
         />
-        <div className="flex flex-col gap-1 rounded-control bg-white p-3.5 text-small shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+        <div className="flex flex-col gap-1 rounded-control bg-surface p-3.5 text-small shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
           <span className="text-xs font-bold text-muted">
             The taker will see:
           </span>
@@ -176,11 +176,11 @@ export function BulkApproveSheet({
         {formatKg(kg)}kg?
       </h3>
       {error && <FormErrorBanner>{error}</FormErrorBanner>}
-      <ul className="m-0 flex list-none flex-col rounded-control bg-white p-0 px-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+      <ul className="m-0 flex list-none flex-col rounded-control bg-surface p-0 px-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
         {going.map(({ claim }) => (
           <li
             key={claim.id}
-            className="flex items-center justify-between gap-3 py-2.5 text-small shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)] last:shadow-none"
+            className="flex items-center justify-between gap-3 py-2.5 text-small shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)] last:shadow-none"
           >
             <span className="min-w-0 truncate">
               <strong>{claim.taker?.name}</strong>{" "}

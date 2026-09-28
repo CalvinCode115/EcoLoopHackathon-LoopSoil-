@@ -16,14 +16,14 @@ import { cn } from "@/lib/cn";
 
 /**
  * Input from the design system: label above, 48px white field, 12px radius, 1px hairline
- * (#8F8E80, 3:1). Focus: 2px leaf ring + halo. Error: red ring + red helper with icon.
+ * (var(--color-edge), 3:1). Focus: 2px leaf ring + halo. Error: red ring + red helper with icon.
  * Helper and error share the slot under the field. Never placeholder-as-label.
  */
 const fieldBox =
-  "flex items-center overflow-hidden rounded-control bg-white shadow-[inset_0_0_0_1px_var(--color-edge)] " +
-  "focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]";
+  "flex items-center overflow-hidden rounded-control bg-surface shadow-[inset_0_0_0_1px_var(--color-edge)] " +
+  "focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]";
 const fieldBoxError =
-  "shadow-[inset_0_0_0_2px_var(--color-error)] focus-within:shadow-[inset_0_0_0_2px_var(--color-error),0_0_0_4px_rgba(180,67,47,0.2)]";
+  "shadow-[inset_0_0_0_2px_var(--color-error)] focus-within:shadow-[inset_0_0_0_2px_var(--color-error),0_0_0_4px_rgba(var(--rgb-error),0.2)]";
 const control =
   "min-w-0 flex-1 border-none bg-transparent px-4 font-sans text-body text-ink outline-none " +
   "placeholder:text-muted disabled:cursor-not-allowed";

@@ -344,7 +344,7 @@ export default function BatchDetailPage() {
         <div
           role="tablist"
           aria-label="Batch sections"
-          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
         >
           {tabs.map((t) => {
             const selected = tab === t.key;
@@ -369,9 +369,7 @@ export default function BatchDetailPage() {
                   <span
                     className={cn(
                       "h-5 min-w-[22px] rounded-full px-1.5 text-center text-xs font-bold leading-5",
-                      selected
-                        ? "bg-leaf text-cream"
-                        : "bg-[#ECE6D8] text-muted",
+                      selected ? "bg-leaf text-cream" : "bg-track text-muted",
                     )}
                   >
                     {t.count ?? "–"}
@@ -560,7 +558,7 @@ function DetailSkeleton() {
       <div aria-hidden className={cn(card, "min-h-[330px]")}>
         <Skeleton className="h-[22px] w-1/5" />
         <Skeleton className="h-3.5 w-2/5" />
-        <div className="flex h-60 shadow-[inset_0_-1px_0_rgba(107,107,94,0.18)]">
+        <div className="flex h-60 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.18)]">
           {[220, 60, 50, 150, 50, 110].map((h, i) => (
             <div key={i} className="flex flex-1 items-end justify-center">
               <Skeleton
@@ -573,7 +571,7 @@ function DetailSkeleton() {
       </div>
       <div
         aria-hidden
-        className="flex gap-7 pb-3.5 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+        className="flex gap-7 pb-3.5 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
       >
         {[0, 1, 2, 3, 4].map((i) => (
           <Skeleton key={i} className="h-[18px] w-[90px]" />

@@ -94,7 +94,7 @@ export function TopUpSheet({
           placeholder="e.g. Daily generation 29 Sep"
           maxLength={500}
         />
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
           <div>
             <span className="text-xs text-muted">Total now</span>
             <div className="font-display text-2xl font-semibold text-deep">
@@ -369,13 +369,13 @@ export function SheetActions({ children }: { children: ReactNode }) {
 
 export function Facts({ rows }: { rows: [string, ReactNode][] }) {
   return (
-    <dl className="m-0 grid grid-cols-[140px_minmax(0,1fr)] rounded-control bg-white px-3.5 text-small shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+    <dl className="m-0 grid grid-cols-[140px_minmax(0,1fr)] rounded-control bg-surface px-3.5 text-small shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
       {rows.map(([k, v]) => (
         <div key={k} className="contents">
-          <dt className="py-2.5 text-muted shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+          <dt className="py-2.5 text-muted shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
             {k}
           </dt>
-          <dd className="m-0 py-2.5 font-semibold shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+          <dd className="m-0 py-2.5 font-semibold shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
             {v}
           </dd>
         </div>

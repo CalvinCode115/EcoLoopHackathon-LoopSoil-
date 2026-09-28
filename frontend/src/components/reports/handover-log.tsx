@@ -135,7 +135,7 @@ export function HandoverLog({
       >
         {!print && (
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex h-11 min-w-[220px] grow items-center gap-2 rounded-control bg-white px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf)]">
+            <div className="flex h-11 min-w-[220px] grow items-center gap-2 rounded-control bg-surface px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf)]">
               <MagnifyingGlass size={16} className="text-muted" aria-hidden />
               <input
                 type="search"
@@ -501,10 +501,10 @@ function LogDrawer({
         <dl className="m-0 grid grid-cols-[120px_minmax(0,1fr)] text-small">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
-              <dt className="py-2 text-muted shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+              <dt className="py-2 text-muted shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
                 {k}
               </dt>
-              <dd className="m-0 py-2 font-semibold shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+              <dd className="m-0 py-2 font-semibold shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
                 {v}
               </dd>
             </div>

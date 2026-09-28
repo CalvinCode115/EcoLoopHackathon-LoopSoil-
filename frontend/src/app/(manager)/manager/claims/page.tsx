@@ -105,7 +105,7 @@ async function fetchQueue(tab: Tab, batchId: string): Promise<Load> {
 export default function ManagerClaimsPage() {
   return (
     <Suspense fallback={<ClaimsSkeleton />}>
-      <ClaimsReview />
+      <Keyed />
     </Suspense>
   );
 }
@@ -344,7 +344,7 @@ function ClaimsReview() {
         <div
           role="tablist"
           aria-label="Claim status"
-          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
         >
           {TABS.map((t) => {
             const on = tab === t.key;
@@ -366,7 +366,7 @@ function ClaimsReview() {
                 <span
                   className={cn(
                     "h-5 min-w-[22px] rounded-full px-1.5 text-center text-xs font-bold leading-5",
-                    on ? "bg-leaf text-cream" : "bg-[#ECE6D8] text-muted",
+                    on ? "bg-leaf text-cream" : "bg-track text-muted",
                   )}
                 >
                   {data ? data.counts[t.key] : "–"}
@@ -408,7 +408,7 @@ function ClaimsReview() {
             <label htmlFor="c-q" className="text-[13px] font-semibold">
               Search
             </label>
-            <div className="flex h-11 items-center gap-2 rounded-control bg-white px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]">
+            <div className="flex h-11 items-center gap-2 rounded-control bg-surface px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]">
               <MagnifyingGlass size={16} className="text-muted" aria-hidden />
               <input
                 id="c-q"
@@ -620,7 +620,7 @@ function QuickFilter({
       className={cn(
         "flex items-center gap-3 rounded-[14px] bg-cream py-2.5 pl-3 pr-4 text-left text-ink shadow-card hover:bg-sage",
         pressed &&
-          "shadow-[inset_0_0_0_2px_var(--color-leaf),0_1px_2px_rgba(47,74,36,0.06),0_8px_24px_rgba(47,74,36,0.08)]",
+          "shadow-[inset_0_0_0_2px_var(--color-leaf),0_1px_2px_rgba(var(--rgb-shade),0.06),0_8px_24px_rgba(var(--rgb-shade),0.08)]",
       )}
     >
       <span
@@ -671,7 +671,7 @@ function FilterSelect({
           aria-label={label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-11 w-full cursor-pointer appearance-none rounded-control border-none bg-white pl-3 pr-9 text-small text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]"
+          className="h-11 w-full cursor-pointer appearance-none rounded-control border-none bg-surface pl-3 pr-9 text-small text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]"
         >
           {children}
         </select>
@@ -700,7 +700,7 @@ function DateBox({
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-11 rounded-control bg-white px-3 text-small text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]"
+      className="h-11 rounded-control bg-surface px-3 text-small text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]"
     />
   );
 }
@@ -778,7 +778,7 @@ function QueueSkeleton() {
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div
             key={i}
-            className="flex flex-col gap-2 px-4 py-3.5 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+            className="flex flex-col gap-2 px-4 py-3.5 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
           >
             <div className="flex justify-between">
               <Skeleton className="h-4 w-32" />
@@ -816,4 +816,10 @@ function ClaimsSkeleton() {
       <QueueSkeleton />
     </div>
   );
+}
+
+/** Remount when ?claim= changes, so opening another one from the sidebar search selects it. */
+function Keyed() {
+  const params = useSearchParams();
+  return <ClaimsReview key={params.get("claim") ?? ""} />;
 }

@@ -23,10 +23,18 @@ import type { Batch, BatchPool } from "@/lib/types";
 
 /** Dashboard stock split: Reserved = school reserve + bulk not yet collected. */
 export const DASH_SERIES = [
-  { key: "reserved", label: "Reserved", color: "#A0672E" },
-  { key: "claimed", label: "Claimed", color: "#3A7FC4" },
-  { key: "collected", label: "Collected", color: "#2F6E24" },
-  { key: "remaining", label: "Remaining", color: "#7FB858" },
+  { key: "reserved", label: "Reserved", color: "var(--color-chart-reserve)" },
+  { key: "claimed", label: "Claimed", color: "var(--color-chart-claimed)" },
+  {
+    key: "collected",
+    label: "Collected",
+    color: "var(--color-chart-collected)",
+  },
+  {
+    key: "remaining",
+    label: "Remaining",
+    color: "var(--color-chart-remaining)",
+  },
 ] as const;
 
 export function dashSplit(p: BatchPool): Record<string, number> {
@@ -61,7 +69,7 @@ export function StockByBatch({ batches }: { batches: Batch[] }) {
           <div
             role="group"
             aria-label="Batches shown"
-            className="inline-flex gap-0.5 rounded-control bg-[#ECE6D8] p-[3px]"
+            className="inline-flex gap-0.5 rounded-control bg-track p-[3px]"
           >
             {(["active", "all"] as const).map((k) => (
               <button
@@ -153,7 +161,7 @@ export function StockRemaining({ batches }: { batches: Batch[] }) {
             aria-label="Batch"
             value={id}
             onChange={(e) => setId(e.target.value)}
-            className="h-9 rounded-[9px] bg-white px-2 text-[13px] shadow-[inset_0_0_0_1px_var(--color-edge)]"
+            className="h-9 rounded-[9px] bg-surface px-2 text-[13px] shadow-[inset_0_0_0_1px_var(--color-edge)]"
           >
             <option value="">All open batches</option>
             {open.map((b) => (
@@ -204,7 +212,7 @@ export function BatchStatusSummary({ batches }: { batches: Batch[] }) {
           <Link
             key={s}
             href="/manager/batches"
-            className="flex flex-col items-center gap-1 rounded-control bg-white py-3 text-ink no-underline shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)] hover:bg-row-hover"
+            className="flex flex-col items-center gap-1 rounded-control bg-surface py-3 text-ink no-underline shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)] hover:bg-row-hover"
           >
             <span className="font-display text-2xl font-semibold text-deep">
               {batches.filter((b) => b.status === s).length}

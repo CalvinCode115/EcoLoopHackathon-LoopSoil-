@@ -160,10 +160,10 @@ export function DownloadDialog({
                 <label
                   key={t.key}
                   className={cn(
-                    "flex cursor-pointer gap-2.5 rounded-control bg-white p-3",
+                    "flex cursor-pointer gap-2.5 rounded-control bg-surface p-3",
                     type === t.key
                       ? "shadow-[inset_0_0_0_2px_var(--color-leaf)]"
-                      : "shadow-[inset_0_0_0_1px_rgba(143,142,128,0.4)]",
+                      : "shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.4)]",
                   )}
                 >
                   <input
@@ -200,7 +200,7 @@ export function DownloadDialog({
                       "inline-flex h-9 items-center gap-2 rounded-full px-3 text-[13px] font-semibold",
                       on
                         ? "bg-sage text-deep"
-                        : "bg-white shadow-[inset_0_0_0_1px_rgba(143,142,128,0.4)]",
+                        : "bg-surface shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.4)]",
                       type !== "custom" && "opacity-80",
                     )}
                   >
@@ -259,10 +259,10 @@ export function DownloadDialog({
                 <label
                   key={k}
                   className={cn(
-                    "flex cursor-pointer gap-2.5 rounded-control bg-white p-3",
+                    "flex cursor-pointer gap-2.5 rounded-control bg-surface p-3",
                     format === k
                       ? "shadow-[inset_0_0_0_2px_var(--color-leaf)]"
-                      : "shadow-[inset_0_0_0_1px_rgba(143,142,128,0.4)]",
+                      : "shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.4)]",
                   )}
                 >
                   <input
@@ -304,7 +304,7 @@ export function DownloadDialog({
         </div>
         <aside
           aria-label="Preview"
-          className="flex flex-col gap-3 rounded-card bg-[#F4EFE4] p-4"
+          className="flex flex-col gap-3 rounded-card bg-well p-4"
         >
           <span className="text-xs font-bold uppercase tracking-[0.08em] text-muted">
             Preview

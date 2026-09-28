@@ -58,3 +58,10 @@ export class CreateSavedViewDto {
   @IsObject()
   filters: Record<string, unknown>;
 }
+
+/** GET /manager/search?q= */
+export class SearchQueryDto {
+  @IsString()
+  @MaxLength(80)
+  q: string;
+}

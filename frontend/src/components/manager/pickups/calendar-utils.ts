@@ -15,13 +15,13 @@ export const SLOT_STATE: Record<
 > = {
   open: {
     label: "Open",
-    block: "bg-[#DDEBCF] text-deep",
-    swatch: "bg-[#DDEBCF]",
+    block: "bg-slot-open text-deep",
+    swatch: "bg-slot-open",
   },
   almost: {
     label: "Almost full",
-    block: "bg-[#F6DFAE] text-amber-ink",
-    swatch: "bg-[#F6DFAE]",
+    block: "bg-slot-amber text-amber-ink",
+    swatch: "bg-slot-amber",
   },
   full: { label: "Full", block: "bg-deep text-cream", swatch: "bg-deep" },
   closed: {

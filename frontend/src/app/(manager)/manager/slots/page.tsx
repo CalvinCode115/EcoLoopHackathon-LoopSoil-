@@ -427,7 +427,7 @@ function Pickups() {
           />
           <SummaryCard
             icon={<CalendarBlank size={18} weight="bold" />}
-            iconClass="bg-[#ECE6D8] text-ink"
+            iconClass="bg-track text-ink"
             label="This week"
             value={summary?.week}
             unit="pickups"
@@ -474,7 +474,7 @@ function Pickups() {
               <div
                 role="group"
                 aria-label="Calendar view"
-                className="flex rounded-control bg-[#ECE6D8] p-1"
+                className="flex rounded-control bg-track p-1"
               >
                 {(["day", "week", "month", "list"] as View[]).map((v) => (
                   <button
@@ -529,7 +529,7 @@ function Pickups() {
                     "h-9 rounded-full px-3.5 text-[13px] font-bold",
                     type === v
                       ? "bg-deep text-cream"
-                      : "bg-white text-ink shadow-[inset_0_0_0_1px_rgba(143,142,128,0.5)] hover:bg-sage",
+                      : "bg-surface text-ink shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.5)] hover:bg-sage",
                   )}
                 >
                   {label}
@@ -540,7 +540,7 @@ function Pickups() {
                   aria-label="Location"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="h-9 cursor-pointer appearance-none rounded-full border-none bg-white pl-3.5 pr-8 text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_rgba(143,142,128,0.5)] outline-none"
+                  className="h-9 cursor-pointer appearance-none rounded-full border-none bg-surface pl-3.5 pr-8 text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.5)] outline-none"
                 >
                   <option value="">All locations</option>
                   {locations.map((l) => (

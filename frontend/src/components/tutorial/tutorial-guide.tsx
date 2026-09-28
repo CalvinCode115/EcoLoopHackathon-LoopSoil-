@@ -531,7 +531,7 @@ function OrganisationCard() {
             Contact the SUSS team
           </Button>
         ) : (
-          // PLACEHOLDER: no contact email supplied yet (lib/site-config.ts).
+          // Fallback if SUSS_CONTACT_EMAIL is ever cleared (lib/site-config.ts).
           <Button
             size="lg"
             disabled

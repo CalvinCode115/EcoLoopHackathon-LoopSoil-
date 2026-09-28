@@ -56,7 +56,7 @@ export function Sheet({
       >
         <span
           aria-hidden
-          className="h-1 w-10 shrink-0 self-center rounded-sm bg-[#CFC9BA] md:hidden"
+          className="h-1 w-10 shrink-0 self-center rounded-sm bg-grab md:hidden"
         />
         {children}
       </div>

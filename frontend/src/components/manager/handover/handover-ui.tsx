@@ -30,7 +30,7 @@ export function BigButton({
         "flex min-h-14 w-full items-center justify-center gap-2.5 rounded-[14px] px-[18px] text-[17px] font-bold disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" && "bg-leaf text-cream hover:bg-deep",
         variant === "secondary" &&
-          "bg-white text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage",
+          "bg-surface text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage",
         variant === "danger" && "bg-error text-cream hover:bg-danger-ink",
         className,
       )}
@@ -46,7 +46,7 @@ export function TypeTag({ bulk }: { bulk: boolean }) {
     <span
       className={cn(
         "inline-flex h-5 shrink-0 items-center rounded-[10px] px-[7px] text-[11px] font-bold",
-        bulk ? "bg-[#EAD9C6] text-[#7A5A3C]" : "bg-sage text-deep",
+        bulk ? "bg-soil-tint text-soil" : "bg-sage text-deep",
       )}
     >
       {bulk ? "Bulk" : "Individual"}
@@ -67,7 +67,7 @@ export function CountStepper({
   onChange: (n: number) => void;
 }) {
   const btn =
-    "flex size-12 items-center justify-center rounded-control shadow-[inset_0_0_0_1px_var(--color-edge)] disabled:bg-disabled disabled:text-[#A09E90]";
+    "flex size-12 items-center justify-center rounded-control shadow-[inset_0_0_0_1px_var(--color-edge)] disabled:bg-disabled disabled:text-faint";
   return (
     <div className="flex min-h-14 items-center justify-between gap-2.5">
       <span id={id} className="text-[15px] font-semibold">
@@ -83,7 +83,7 @@ export function CountStepper({
           aria-label="Fewer"
           disabled={value <= 0}
           onClick={() => onChange(value - 1)}
-          className={cn(btn, "bg-white text-deep hover:bg-sage")}
+          className={cn(btn, "bg-surface text-deep hover:bg-sage")}
         >
           <Minus size={20} weight="bold" />
         </button>
@@ -98,7 +98,7 @@ export function CountStepper({
           aria-label="More"
           disabled={value >= 99}
           onClick={() => onChange(value + 1)}
-          className={cn(btn, "bg-white text-deep hover:bg-sage")}
+          className={cn(btn, "bg-surface text-deep hover:bg-sage")}
         >
           <Plus size={20} weight="bold" />
         </button>
@@ -131,7 +131,7 @@ export function StepCard({
             "flex size-[30px] shrink-0 items-center justify-center rounded-full text-small font-bold",
             done
               ? "bg-leaf text-cream"
-              : "bg-white text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)]",
+              : "bg-surface text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)]",
           )}
         >
           {n}

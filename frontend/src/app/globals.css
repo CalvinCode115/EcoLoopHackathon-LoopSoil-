@@ -1,12 +1,17 @@
 @import "tailwindcss";
 
+/* `dark:` = the manager dark mode (data-theme on <html>), not the OS preference. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /*
  * LoopSoil design tokens — taken from the Claude Design canvas "LoopSoil — Public pages"
  * (Design system, Taker components and Manager components boards). Tailwind v4 reads its
  * theme from this @theme block, so this IS the Tailwind config: every token below becomes
  * a utility (bg-leaf, text-deep, shadow-card, rounded-control, font-display, …).
  *
- * The design is light-only; there is no dark palette to map.
+ * The manager area also has a dark mode (board "Dashboard · 1440 · TRIAL: dark mode"):
+ * see the `html[data-theme]` blocks below. Every colour a manager screen uses is a token
+ * here, so dark mode is just a second set of values for the same names.
  */
 @theme {
   /* ── Core palette ─────────────────────────────────────────────────────── */
@@ -33,6 +38,34 @@
   --color-row-hover: #f3eee3;
   --color-skeleton: #e9e2d2;
   --color-disabled: #efebe1; /* disabled/busy input fill */
+
+  /* ── Manager surfaces (each flips in dark mode) ───────────────────────── */
+  --color-page: #f5efe3; /* page ground — white in the manager area */
+  --color-surface: #ffffff; /* inputs, raised tiles (was bg-white) */
+  --color-track: #ece6d8; /* segmented controls, bar tracks, neutral chips */
+  --color-well: #f4efe4; /* inset summary boxes */
+  --color-well-alt: #f1ede3; /* inactive list rows */
+  --color-leaf-tint: #eef3e6; /* selected row, "today" column */
+  --color-leaf-hover: #5d8b46;
+  --color-sage-hover: #cfdcbf;
+  --color-soil-tint: #ead9c6; /* bulk / organisation chips */
+  --color-danger-soft: #fbede8; /* overdue card */
+  --color-step: #e3ddcf; /* progress-step connector */
+  --color-edge-soft: #c9c5b8; /* empty step ring, "unclaimed" slice */
+  --color-faint: #a09e90; /* disabled text */
+  --color-crumb: #b9b6aa; /* breadcrumb separator */
+  --color-grab: #cfc9ba; /* sheet drag handle */
+  --color-slot-open: #ddebcf; /* calendar slot blocks */
+  --color-slot-amber: #f6dfae;
+  --color-nav: #2f4a24; /* manager sidebar — green in both modes */
+
+  /* ── Chart palette ────────────────────────────────────────────────────── */
+  --color-chart-reserve: #a0672e;
+  --color-chart-bulk: #e0a030;
+  --color-chart-claimed: #3a7fc4;
+  --color-chart-collected: #2f6e24;
+  --color-chart-remaining: #7fb858;
+  --color-chart-mid: #6e9a52;
 
   /* ── Type ─────────────────────────────────────────────────────────────── */
   --font-display: var(--font-fraunces), Georgia, serif;
@@ -78,6 +111,95 @@
   --animate-shimmer: ls-shimmer 1.4s linear infinite;
 }
 
+/*
+ * RGB triplets for hairlines and rings drawn at an alpha, e.g.
+ * shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]. Not colours, so outside @theme.
+ */
+:root {
+  --rgb-hair: 107, 107, 94; /* muted — row dividers */
+  --rgb-edge: 143, 142, 128; /* edge — control outlines */
+  --rgb-leaf: 79, 122, 58; /* focus glow */
+  --rgb-shade: 47, 74, 36; /* soft shadows */
+  --rgb-error: 180, 67, 47;
+}
+
+/* Manager area, either mode: white page ground (board "TRIAL: white ground + green nav"). */
+html[data-theme] {
+  --color-page: #ffffff;
+}
+
+/*
+ * Manager dark mode. ManagerShell sets data-theme="dark" on <html> from the account's
+ * saved preference, so taker and public pages never see it. Screen only: printed
+ * reports stay light.
+ */
+@media screen {
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --color-page: #0e110c;
+    --color-beige: #0e110c;
+    --color-cream: #171c14;
+    --color-surface: #1f261b;
+    --color-leaf: #78ae58;
+    --color-deep: #bfe0a4;
+    --color-sage: #26361f;
+    --color-soil: #d9b48c;
+    --color-ink: #eceae0;
+    --color-muted: #a8a898;
+    --color-error: #f07a62;
+    --color-edge: #6f6f63;
+
+    --color-amber-tint: #3a2f15;
+    --color-amber-ink: #f1c66e;
+    --color-danger-tint: #3a1d17;
+    --color-danger-ink: #f3a08f;
+    --color-grey-tint: #2e2e28;
+    --color-grey-ink: #d2d0c4;
+
+    --color-row-hover: #222a1e;
+    --color-skeleton: #232b1f;
+    --color-disabled: #1a2017;
+
+    --color-track: #2a3325;
+    --color-well: #1d2419;
+    --color-well-alt: #1b2118;
+    --color-leaf-tint: #1e2a18;
+    --color-leaf-hover: #8bbe6b;
+    --color-sage-hover: #2f4427;
+    --color-soil-tint: #3a2b1e;
+    --color-danger-soft: #2e1813;
+    --color-step: #33392d;
+    --color-edge-soft: #4a4f43;
+    --color-faint: #6f6f63;
+    --color-crumb: #6f6f63;
+    --color-grab: #4a4f43;
+    --color-slot-open: #24361c;
+    --color-slot-amber: #3f3217;
+    --color-nav: #1b2e15;
+
+    --color-chart-reserve: #d08d4e;
+    --color-chart-bulk: #e3a33b;
+    --color-chart-claimed: #5ea2e6;
+    --color-chart-collected: #4fa23e;
+    --color-chart-remaining: #9bd274;
+    --color-chart-mid: #88ba68;
+
+    /* Lighter lines on a dark ground; pre-darkened so the same alphas read as in the design. */
+    --rgb-hair: 215, 213, 204;
+    --rgb-edge: 119, 121, 112;
+    --rgb-leaf: 120, 174, 88;
+    --rgb-shade: 0, 0, 0;
+    --rgb-error: 240, 122, 98;
+
+    --shadow-card:
+      0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.32);
+    --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.6);
+    --shadow-topbar: 0 1px 0 rgba(236, 234, 224, 0.08);
+    --shadow-photo:
+      0 2px 4px rgba(0, 0, 0, 0.3), 0 24px 56px rgba(0, 0, 0, 0.66);
+  }
+}
+
 @keyframes ls-shimmer {
   0% {
     background-position: 200% 0;
@@ -102,7 +224,7 @@
 
 @layer base {
   body {
-    background: var(--color-beige);
+    background: var(--color-page);
     color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -157,7 +279,12 @@
 
 /* Loading placeholder: shimmer between two beige tones (never a spinner for page loads). */
 @utility skeleton {
-  background: linear-gradient(90deg, #e9e2d2 25%, #f3eee3 50%, #e9e2d2 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-skeleton) 25%,
+    var(--color-row-hover) 50%,
+    var(--color-skeleton) 75%
+  );
   background-size: 200% 100%;
   animation: var(--animate-shimmer);
   border-radius: 8px;

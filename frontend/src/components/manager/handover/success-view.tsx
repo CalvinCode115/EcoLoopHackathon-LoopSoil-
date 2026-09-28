@@ -29,20 +29,25 @@ export function SuccessView({
       <div className="flex flex-col items-center gap-3.5 px-6 pb-2 pt-10 text-center">
         <div className="relative size-[140px]">
           <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden>
-            <circle cx="70" cy="70" r="62" fill="#DCE5CF" />
+            <circle
+              cx="70"
+              cy="70"
+              r="62"
+              style={{ fill: "var(--color-sage)" }}
+            />
             <circle
               cx="70"
               cy="70"
               r="62"
               fill="none"
-              stroke="#4F7A3A"
+              style={{ stroke: "var(--color-leaf)" }}
               strokeWidth="6"
               strokeLinecap="round"
             />
             <path
               d="M46 72l16 16 32-34"
               fill="none"
-              stroke="#2F4A24"
+              style={{ stroke: "var(--color-deep)" }}
               strokeWidth="9"
               strokeLinecap="round"
               strokeLinejoin="round"

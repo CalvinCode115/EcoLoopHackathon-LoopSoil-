@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
-import { UserRole, UserStatus, type User } from '../generated/prisma/client';
+import {
+  UserRole,
+  UserStatus,
+  type ThemePreference,
+  type User,
+} from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** The claims Supabase Auth puts in an access token that we care about. */
@@ -81,6 +86,11 @@ export class AuthService {
       throw new ForbiddenException('Account suspended');
     }
     return user;
+  }
+
+  /** PATCH /auth/me/theme — the manager light/dark switch, stored on the account. */
+  setTheme(userId: string, theme: ThemePreference): Promise<User> {
+    return this.prisma.user.update({ where: { id: userId }, data: { theme } });
   }
 }
 

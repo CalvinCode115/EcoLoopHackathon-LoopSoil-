@@ -77,7 +77,7 @@ export function RangePicker({
       <div
         role="group"
         aria-label="Date range"
-        className="inline-flex gap-0.5 rounded-control bg-[#ECE6D8] p-[3px]"
+        className="inline-flex gap-0.5 rounded-control bg-track p-[3px]"
       >
         {options.map((r) => (
           <button
@@ -104,7 +104,7 @@ export function RangePicker({
             value={custom.from}
             max={custom.to || undefined}
             onChange={(e) => onCustom({ ...custom, from: e.target.value })}
-            className="h-9 rounded-[9px] bg-white px-2 text-[13px] shadow-[inset_0_0_0_1px_var(--color-edge)]"
+            className="h-9 rounded-[9px] bg-surface px-2 text-[13px] shadow-[inset_0_0_0_1px_var(--color-edge)]"
           />
           <span className="text-muted">–</span>
           <input
@@ -113,7 +113,7 @@ export function RangePicker({
             value={custom.to}
             min={custom.from || undefined}
             onChange={(e) => onCustom({ ...custom, to: e.target.value })}
-            className="h-9 rounded-[9px] bg-white px-2 text-[13px] shadow-[inset_0_0_0_1px_var(--color-edge)]"
+            className="h-9 rounded-[9px] bg-surface px-2 text-[13px] shadow-[inset_0_0_0_1px_var(--color-edge)]"
           />
         </div>
       )}
@@ -148,7 +148,7 @@ export function ActionCard({
       className={cn(
         "flex flex-col gap-2.5 rounded-card px-5 py-[18px] text-ink no-underline shadow-card hover:brightness-[0.98]",
         urgent && count
-          ? "bg-[#FBEDE8] shadow-[0_1px_2px_rgba(47,74,36,0.06),0_8px_24px_rgba(47,74,36,0.08),inset_0_0_0_1.5px_rgba(180,67,47,0.45)]"
+          ? "bg-danger-soft shadow-[0_1px_2px_rgba(var(--rgb-shade),0.06),0_8px_24px_rgba(var(--rgb-shade),0.08),inset_0_0_0_1.5px_rgba(var(--rgb-error),0.45)]"
           : "bg-cream hover:bg-row-hover",
       )}
     >
@@ -372,7 +372,7 @@ export function FirstRun({
         {steps.map((s, i) => (
           <li
             key={s.title}
-            className="flex flex-col gap-2 rounded-control bg-white p-4 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]"
+            className="flex flex-col gap-2 rounded-control bg-surface p-4 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]"
           >
             <span className="flex items-center gap-2">
               <span

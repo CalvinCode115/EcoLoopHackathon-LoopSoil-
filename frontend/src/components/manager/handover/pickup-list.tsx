@@ -15,7 +15,7 @@ type Phase = "earlier" | "now" | "later";
 const PHASE: Record<Phase, { label: string; className: string }> = {
   earlier: { label: "Earlier", className: "bg-grey-tint text-grey-ink" },
   now: { label: "Now", className: "bg-leaf text-cream" },
-  later: { label: "Later", className: "bg-[#ECE6D8] text-muted" },
+  later: { label: "Later", className: "bg-track text-muted" },
 };
 
 /**
@@ -269,10 +269,10 @@ function PickupRow({
           }}
           className={cn(
             "relative z-[2] flex min-h-[76px] w-full items-center gap-3 rounded-[14px] px-3.5 py-3 text-left text-ink transition-transform",
-            waiting ? "bg-white hover:bg-row-hover" : "bg-[#F1EDE3]",
+            waiting ? "bg-surface hover:bg-row-hover" : "bg-well-alt",
             selected
               ? "shadow-[inset_0_0_0_2px_var(--color-leaf)]"
-              : "shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]",
+              : "shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]",
           )}
         >
           {booking.status === "COLLECTED" && (

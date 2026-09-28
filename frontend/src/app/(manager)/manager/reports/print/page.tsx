@@ -99,7 +99,7 @@ function PrintReport() {
   const withPhotos = handovers.filter((h) => h.photoUrl);
 
   return (
-    <div className="mx-auto flex max-w-[1000px] flex-col gap-8 bg-beige print:max-w-none print:bg-white">
+    <div className="mx-auto flex max-w-[1000px] flex-col gap-8 bg-beige print:max-w-none print:bg-surface">
       <div className="flex items-center justify-between gap-3 print:hidden">
         <p className="text-small text-muted">
           Your report is ready. In the print dialog choose “Save as PDF”.
@@ -111,9 +111,9 @@ function PrintReport() {
 
       <section className="flex min-h-[70vh] flex-col justify-between gap-8 rounded-card bg-deep p-10 text-cream print:min-h-[260mm] print:break-after-page print:rounded-none">
         {logos && (
-          <div className="flex items-center gap-3 rounded-control bg-cream p-3 text-deep">
+          // Fixed light chip: the navy SUSS logo needs it, even in dark mode.
+          <div className="flex items-center gap-3 self-start rounded-control bg-[#FBF8F1] p-3">
             <LogoLockup />
-            <span className="text-small font-bold">× SUSS</span>
           </div>
         )}
         <div className="flex flex-col gap-2">

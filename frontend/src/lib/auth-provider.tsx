@@ -23,6 +23,8 @@ export interface CurrentUser {
   name: string;
   role: UserRole;
   status: "ACTIVE" | "SUSPENDED";
+  /** Manager light/dark switch, saved on the account (PATCH /auth/me/theme). */
+  theme: "LIGHT" | "DARK";
   createdAt: string;
   updatedAt: string;
 }

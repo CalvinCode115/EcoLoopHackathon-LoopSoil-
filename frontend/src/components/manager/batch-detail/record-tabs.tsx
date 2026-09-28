@@ -320,7 +320,7 @@ export function HandoversTab({
             {bags} bag{bags === 1 ? "" : "s"}
           </span>
         </div>
-        <div className="flex-1 rounded-[14px] bg-white p-4 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+        <div className="flex-1 rounded-[14px] bg-surface p-4 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
           <span className="text-[13px] font-bold text-muted">
             Still to collect
           </span>

@@ -9,6 +9,7 @@ import { ClaimsModule } from './claims/claims.module';
 import { HandoversModule } from './handovers/handovers.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { TakersModule } from './takers/takers.module';
@@ -27,6 +28,7 @@ import { TakersModule } from './takers/takers.module';
     SchedulingModule,
     HandoversModule,
     ReportingModule,
+    ReviewsModule,
   ],
   controllers: [AppController],
 })

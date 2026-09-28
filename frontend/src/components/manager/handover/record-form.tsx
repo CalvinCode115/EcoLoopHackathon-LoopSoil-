@@ -276,11 +276,11 @@ function RecordForm({
               type="button"
               aria-label="Minus 0.1kg"
               onClick={() => step(-0.1)}
-              className="flex h-16 w-14 items-center justify-center rounded-[14px] bg-white text-deep shadow-[inset_0_0_0_1px_var(--color-edge)] hover:bg-sage"
+              className="flex h-16 w-14 items-center justify-center rounded-[14px] bg-surface text-deep shadow-[inset_0_0_0_1px_var(--color-edge)] hover:bg-sage"
             >
               <Minus size={22} weight="bold" />
             </button>
-            <div className="flex h-16 grow items-center justify-center rounded-[14px] bg-white shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf)]">
+            <div className="flex h-16 grow items-center justify-center rounded-[14px] bg-surface shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf)]">
               <input
                 id="h-kg"
                 type="number"
@@ -301,7 +301,7 @@ function RecordForm({
               type="button"
               aria-label="Plus 0.1kg"
               onClick={() => step(0.1)}
-              className="flex h-16 w-14 items-center justify-center rounded-[14px] bg-white text-deep shadow-[inset_0_0_0_1px_var(--color-edge)] hover:bg-sage"
+              className="flex h-16 w-14 items-center justify-center rounded-[14px] bg-surface text-deep shadow-[inset_0_0_0_1px_var(--color-edge)] hover:bg-sage"
             >
               <Plus size={22} weight="bold" />
             </button>
@@ -315,7 +315,7 @@ function RecordForm({
               setActual(formatKg(lookup.kg));
               setOverOk(false);
             }}
-            className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-control bg-sage px-3.5 text-small font-bold text-deep hover:bg-[#cfdcbf]"
+            className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-control bg-sage px-3.5 text-small font-bold text-deep hover:bg-sage-hover"
           >
             <Check size={16} weight="bold" aria-hidden />
             Match approved amount · {formatKg(lookup.kg)}kg
@@ -350,19 +350,19 @@ function RecordForm({
           value={half}
           onChange={setHalf}
         />
-        <div aria-hidden className="h-px bg-[rgba(107,107,94,0.14)]" />
+        <div aria-hidden className="h-px bg-[rgba(var(--rgb-hair),0.14)]" />
         <CountStepper
           id="h-one"
           label="1kg bags"
           value={one}
           onChange={setOne}
         />
-        <div aria-hidden className="h-px bg-[rgba(107,107,94,0.14)]" />
+        <div aria-hidden className="h-px bg-[rgba(var(--rgb-hair),0.14)]" />
         <div className="flex min-h-14 items-center justify-between gap-2.5">
           <label htmlFor="h-loose" className="text-[15px] font-semibold">
             Loose / scooped
           </label>
-          <div className="flex h-12 w-[132px] items-center rounded-control bg-white shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf)]">
+          <div className="flex h-12 w-[132px] items-center rounded-control bg-surface shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf)]">
             <input
               id="h-loose"
               type="number"
@@ -379,7 +379,7 @@ function RecordForm({
         </div>
         <div
           role="status"
-          className="flex items-center justify-between rounded-control bg-[#F4EFE4] px-3.5 py-3 text-[15px]"
+          className="flex items-center justify-between rounded-control bg-well px-3.5 py-3 text-[15px]"
         >
           Bags + loose =
           <strong className="text-lg text-deep">{formatKg(packed)}kg</strong>
@@ -441,7 +441,7 @@ function RecordForm({
                 onClick={() =>
                   photoFailed ? void save() : cameraRef.current?.click()
                 }
-                className="min-h-11 self-start rounded-control bg-white px-4 text-[15px] font-bold text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage"
+                className="min-h-11 self-start rounded-control bg-surface px-4 text-[15px] font-bold text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage"
               >
                 {photoFailed ? "Retry" : "Retake"}
               </button>
@@ -460,7 +460,7 @@ function RecordForm({
             <button
               type="button"
               onClick={() => galleryRef.current?.click()}
-              className="flex min-h-[88px] flex-col items-center justify-center gap-1.5 rounded-[14px] bg-white text-[15px] font-bold text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage"
+              className="flex min-h-[88px] flex-col items-center justify-center gap-1.5 rounded-[14px] bg-surface text-[15px] font-bold text-deep shadow-[inset_0_0_0_1.5px_var(--color-leaf)] hover:bg-sage"
             >
               <Images size={26} aria-hidden />
               Upload from gallery
@@ -489,12 +489,12 @@ function RecordForm({
             maxLength={500}
             placeholder="e.g. Taker brought own container"
             onChange={(e) => setNote(e.target.value)}
-            className="h-12 rounded-control border-none bg-white px-4 text-body text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]"
+            className="h-12 rounded-control border-none bg-surface px-4 text-body text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]"
           />
         </div>
       </StepCard>
 
-      <div className="sticky bottom-0 z-10 -mx-4 flex flex-col gap-1.5 bg-beige/95 px-4 pb-4 pt-3 shadow-[0_-1px_0_rgba(107,107,94,0.14),0_-8px_20px_rgba(47,74,36,0.08)] md:mx-0 md:rounded-card">
+      <div className="sticky bottom-0 z-10 -mx-4 flex flex-col gap-1.5 bg-beige/95 px-4 pb-4 pt-3 shadow-[0_-1px_0_rgba(var(--rgb-hair),0.14),0_-8px_20px_rgba(var(--rgb-shade),0.08)] md:mx-0 md:rounded-card">
         {error && (
           <p
             role="alert"
@@ -582,10 +582,10 @@ function RecordForm({
               ] as [string, string][]
             ).map(([k, v]) => (
               <div key={k} className="contents">
-                <dt className="py-2 text-muted shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+                <dt className="py-2 text-muted shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
                   {k}
                 </dt>
-                <dd className="m-0 py-2 font-semibold shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+                <dd className="m-0 py-2 font-semibold shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
                   {v}
                 </dd>
               </div>
@@ -660,7 +660,7 @@ function IdentityCard({
         <Clock size={16} className="shrink-0 text-leaf" aria-hidden />
         {slotLine(lookup, now)}
       </div>
-      <div className="flex items-center gap-2.5 rounded-control bg-[#F4EFE4] px-3 py-2.5 text-small font-semibold">
+      <div className="flex items-center gap-2.5 rounded-control bg-well px-3 py-2.5 text-small font-semibold">
         <ShieldCheck size={18} className="shrink-0 text-leaf" aria-hidden />
         Ask the taker to show their reference to confirm.
       </div>

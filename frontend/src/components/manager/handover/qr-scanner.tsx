@@ -180,7 +180,7 @@ export function QrScanner({
         {!paused && !error && (
           <span
             aria-hidden
-            className="absolute inset-x-3 top-[58%] h-0.5 animate-pulse bg-[#7FB858] shadow-[0_0_12px_#7FB858]"
+            className="absolute inset-x-3 top-[58%] h-0.5 animate-pulse bg-chart-remaining shadow-[0_0_12px_var(--color-chart-remaining)]"
           />
         )}
       </div>
@@ -230,7 +230,7 @@ export function QrScanner({
         <div className="absolute inset-x-0 bottom-0 z-[90] flex flex-col gap-3.5 rounded-t-3xl bg-cream px-5 pb-6 pt-2.5 shadow-photo md:left-1/2 md:w-[440px] md:-translate-x-1/2">
           <span
             aria-hidden
-            className="h-[5px] w-11 self-center rounded-sm bg-[#D6D0C2]"
+            className="h-[5px] w-11 self-center rounded-sm bg-grab"
           />
           {sheet}
         </div>

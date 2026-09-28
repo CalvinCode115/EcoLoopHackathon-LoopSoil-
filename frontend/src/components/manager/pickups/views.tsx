@@ -71,7 +71,7 @@ export function MonthGrid({
   }
   return (
     <div className="overflow-x-auto">
-      <div className="grid min-w-[640px] grid-cols-7 overflow-hidden rounded-control shadow-[inset_0_0_0_1px_rgba(107,107,94,0.14)]">
+      <div className="grid min-w-[640px] grid-cols-7 overflow-hidden rounded-control shadow-[inset_0_0_0_1px_rgba(var(--rgb-hair),0.14)]">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
           <div
             key={d}
@@ -88,8 +88,8 @@ export function MonthGrid({
             <div
               key={d}
               className={cn(
-                "flex min-h-[104px] flex-col gap-1 p-1.5 shadow-[inset_0_1px_0_rgba(107,107,94,0.14),inset_1px_0_0_rgba(107,107,94,0.1)]",
-                d.slice(0, 7) !== month && "bg-[#F4EFE4]",
+                "flex min-h-[104px] flex-col gap-1 p-1.5 shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14),inset_1px_0_0_rgba(var(--rgb-hair),0.1)]",
+                d.slice(0, 7) !== month && "bg-well",
               )}
             >
               <button
@@ -385,7 +385,7 @@ export function NeedsBooking({
             return (
               <li
                 key={it.key}
-                className="flex flex-col gap-1.5 rounded-control bg-white p-3 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]"
+                className="flex flex-col gap-1.5 rounded-control bg-surface p-3 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]"
               >
                 <div className="flex items-center justify-between gap-2">
                   <strong className="truncate text-small">{it.name}</strong>

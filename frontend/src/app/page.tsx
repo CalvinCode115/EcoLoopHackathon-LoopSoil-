@@ -17,6 +17,7 @@ import {
   LeafSprig,
   Sprout,
 } from "@/components/brand/illustrations";
+import { SussLogo } from "@/components/brand/logo";
 import { Footer } from "@/components/nav/footer";
 import { PublicNavbar } from "@/components/nav/public-navbar";
 import { Button } from "@/components/ui/button";
@@ -483,7 +484,7 @@ function ThankYou() {
           Hackathon. <Accent>Thank you for helping us close the loop.</Accent>
         </h2>
         <div className="mt-2 flex items-center gap-4 md:gap-6">
-          <SupporterLogo label="SUSS logo" />
+          <SussLogo className="h-12 md:h-14" />
           <span aria-hidden className="text-xl text-muted">
             ·
           </span>

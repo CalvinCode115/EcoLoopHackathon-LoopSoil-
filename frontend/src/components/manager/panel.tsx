@@ -54,7 +54,7 @@ export const thClass =
   "whitespace-nowrap px-3 py-2.5 text-left text-xs font-bold uppercase tracking-[0.04em] text-muted";
 export const tdClass = "px-3 py-3.5 align-middle";
 export const rowClass =
-  "shadow-[inset_0_1px_0_rgba(107,107,94,0.14)] hover:bg-row-hover";
+  "shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14)] hover:bg-row-hover";
 
 /** Table shell: horizontal scroll on narrow screens, 14px body text. */
 export function DataTable({
@@ -109,7 +109,7 @@ export function ProgressBar({
 
 const chipTones = {
   sage: "bg-sage text-deep",
-  soil: "bg-[#EAD9C6] text-[#7A5A3C]",
+  soil: "bg-soil-tint text-soil",
   grey: "bg-grey-tint text-grey-ink",
 } as const;
 

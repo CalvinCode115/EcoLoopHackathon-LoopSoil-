@@ -340,7 +340,7 @@ export function SlotFormSheet({
                         "size-10 rounded-full text-[13px] font-bold",
                         on
                           ? "bg-leaf text-cream"
-                          : "bg-white text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] hover:bg-sage",
+                          : "bg-surface text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] hover:bg-sage",
                       )}
                     >
                       {w}
@@ -552,7 +552,7 @@ export function MoveSlotSheet({
         Move this slot?
       </h3>
       {error && <FormErrorBanner>{error}</FormErrorBanner>}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
         <div>
           <span className="text-xs text-muted">From</span>
           <div className="font-semibold">{slotTitle(slot)}</div>
@@ -677,10 +677,10 @@ function Choice({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-control bg-white p-3",
+        "flex cursor-pointer items-start gap-3 rounded-control bg-surface p-3",
         checked
           ? "shadow-[inset_0_0_0_2px_var(--color-leaf)]"
-          : "shadow-[inset_0_0_0_1px_rgba(143,142,128,0.4)] hover:bg-row-hover",
+          : "shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.4)] hover:bg-row-hover",
       )}
     >
       <input

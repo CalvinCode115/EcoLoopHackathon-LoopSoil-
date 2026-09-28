@@ -119,7 +119,7 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className="inline-flex gap-0.5 rounded-control bg-[#ECE6D8] p-[3px]"
+      className="inline-flex gap-0.5 rounded-control bg-track p-[3px]"
     >
       {options.map((o) => (
         <button

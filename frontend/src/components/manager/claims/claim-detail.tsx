@@ -151,7 +151,7 @@ export function ClaimDetail({
         </div>
         <Link
           href={`/manager/batches/${claim.batchId}`}
-          className="flex items-center justify-between gap-3 rounded-control bg-white px-3.5 py-3 text-ink no-underline shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)] hover:bg-row-hover"
+          className="flex items-center justify-between gap-3 rounded-control bg-surface px-3.5 py-3 text-ink no-underline shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)] hover:bg-row-hover"
         >
           <span className="flex flex-wrap items-center gap-2.5">
             <Package size={18} className="text-deep" aria-hidden />
@@ -253,7 +253,7 @@ export function ClaimDetail({
           {activity(claim).map((a) => (
             <li
               key={a.text}
-              className="flex items-center gap-2.5 py-2 text-[13px] shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+              className="flex items-center gap-2.5 py-2 text-[13px] shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
             >
               <span
                 aria-hidden
@@ -316,7 +316,7 @@ function Block({
     <section
       className={cn(
         "flex flex-col gap-3 px-6 py-5",
-        !last && "shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]",
+        !last && "shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]",
       )}
     >
       <h3 className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-muted">
@@ -332,10 +332,10 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
     <dl className="m-0 grid grid-cols-[minmax(110px,150px)_minmax(0,1fr)] text-small">
       {rows.map(([k, v]) => (
         <div key={k} className="contents">
-          <dt className="py-2 text-muted shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+          <dt className="py-2 text-muted shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
             {k}
           </dt>
-          <dd className="m-0 py-2 font-semibold shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+          <dd className="m-0 py-2 font-semibold shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
             {v}
           </dd>
         </div>
@@ -443,7 +443,7 @@ function Timeline({ claim, now }: { claim: Claim; now: number }) {
               aria-hidden
               className={cn(
                 "absolute bottom-[-6px] left-2.5 top-6 w-0.5",
-                s.state === "done" ? "bg-leaf" : "bg-[#E3DDCF]",
+                s.state === "done" ? "bg-leaf" : "bg-step",
               )}
             />
           )}
@@ -455,7 +455,8 @@ function Timeline({ claim, now }: { claim: Claim; now: number }) {
               s.state === "failed" && "bg-error",
               s.state === "current" &&
                 "bg-cream shadow-[inset_0_0_0_2px_var(--color-amber-ink)]",
-              s.state === "todo" && "bg-cream shadow-[inset_0_0_0_2px_#C9C5B8]",
+              s.state === "todo" &&
+                "bg-cream shadow-[inset_0_0_0_2px_var(--color-edge-soft)]",
             )}
           >
             {s.state === "done" && <Check size={12} weight="bold" />}
@@ -502,7 +503,7 @@ function CollectionBlock({
   return (
     <Block title="Collection">
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+        <div className="rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
           <span className="text-xs font-bold text-muted">Booking</span>
           <div className="font-display text-lg font-semibold text-deep">
             {booking ? slotText(booking.slot) : "Not booked yet"}
@@ -518,7 +519,7 @@ function CollectionBlock({
             "rounded-control p-3.5",
             overdue
               ? "bg-danger-tint"
-              : "bg-white shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]",
+              : "bg-surface shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]",
           )}
         >
           <span
@@ -783,7 +784,7 @@ function Stat({
     <div
       className={cn(
         "flex-1 rounded-control px-3 py-2.5",
-        warn ? "bg-amber-tint" : "bg-[#F4EFE4]",
+        warn ? "bg-amber-tint" : "bg-well",
       )}
     >
       <div className="text-xs text-muted">{label}</div>
@@ -853,7 +854,7 @@ function ApproveBar({
   const disabled = !takerApproved || saving;
 
   return (
-    <div className="sticky bottom-0 flex flex-col gap-3 rounded-b-card bg-[#F3EEE3] px-6 pb-5 pt-[18px] shadow-[0_-8px_20px_rgba(47,74,36,0.08),inset_0_1px_0_rgba(107,107,94,0.14)]">
+    <div className="sticky bottom-0 flex flex-col gap-3 rounded-b-card bg-row-hover px-6 pb-5 pt-[18px] shadow-[0_-8px_20px_rgba(var(--rgb-shade),0.08),inset_0_1px_0_rgba(var(--rgb-hair),0.14)]">
       {!takerApproved && (
         <p className="rounded-control bg-danger-tint px-3.5 py-2.5 text-[13px] font-semibold text-danger-ink">
           Approve {firstName(claim.taker?.name)}’s account before approving this
@@ -882,7 +883,7 @@ function ApproveBar({
           </label>
           <div
             className={cn(
-              "flex h-12 items-center overflow-hidden rounded-control bg-white focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]",
+              "flex h-12 items-center overflow-hidden rounded-control bg-surface focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]",
               kgError
                 ? "shadow-[inset_0_0_0_2px_var(--color-error)]"
                 : "shadow-[inset_0_0_0_1px_var(--color-edge)]",
@@ -943,7 +944,7 @@ function ApproveBar({
             onChange={(e) => setNote(e.target.value)}
             placeholder="e.g. Please bring your own bag"
             maxLength={500}
-            className="h-12 rounded-control border-none bg-white px-3 text-[15px] text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)] disabled:cursor-not-allowed disabled:bg-disabled"
+            className="h-12 rounded-control border-none bg-surface px-3 text-[15px] text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)] disabled:cursor-not-allowed disabled:bg-disabled"
           />
         </div>
       </div>

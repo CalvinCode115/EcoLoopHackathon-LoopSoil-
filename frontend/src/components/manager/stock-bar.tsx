@@ -7,11 +7,11 @@ import type { BatchPool } from "@/lib/types";
 
 /** Stock segment colours (Manager components → chart / Batches legend). */
 export const STOCK_COLORS = {
-  reserve: "#A0672E",
-  bulk: "#E0A030",
-  claimed: "#3A7FC4",
-  collected: "#2F6E24",
-  remaining: "#7FB858",
+  reserve: "var(--color-chart-reserve)",
+  bulk: "var(--color-chart-bulk)",
+  claimed: "var(--color-chart-claimed)",
+  collected: "var(--color-chart-collected)",
+  remaining: "var(--color-chart-remaining)",
 } as const;
 
 export const STOCK_LABELS = {

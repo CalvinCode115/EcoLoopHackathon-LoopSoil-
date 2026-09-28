@@ -25,7 +25,7 @@ If you already built against the old API, these are the breaking changes:
 | `POST /bookings/:id/reschedule` | `PATCH /bookings/:id` |
 | Handover `actualKg` computed from bags | Send **`actualKg` off the scale**; the bag breakdown is information only (§10) |
 | Handover photo optional | **Photo required** |
-| — | New: batch top-up, bulk claim approval, "needs booking" list, book on behalf, general pickup slots, `GET /manager/dashboard` |
+| — | New: manager light/dark switch (`PATCH /auth/me/theme`, §5), pickup reviews (§12b), batch top-up, bulk claim approval, "needs booking" list, book on behalf, general pickup slots, `GET /manager/dashboard` |
 
 ---
 
@@ -145,6 +145,7 @@ Supabase sign-up/login  →  GET /auth/me  →  { role: "TAKER" | "MANAGER" }
 
 - **`GET /auth/me`** — the first call after login creates the `User` row (role `TAKER`).
   Already done inside `auth-provider.tsx`.
+- **`PATCH /auth/me/theme`** *(MANAGER)* `{ theme: "LIGHT" | "DARK" }` — the manager light/dark switch. Saved on the account, so it survives log-out and follows them to other devices; `/auth/me` returns it as `theme` (default `LIGHT`).
 - Managers are promoted by a backend script — never build a "become manager" button.
 - A login is **not** permission to claim. An individual must register as a taker and be
   approved first.
@@ -419,6 +420,11 @@ their lists: `pendingVetting` → vetting queue, `pending` → `GET /claims?stat
 
 ---
 
+**`GET /manager/search?q=`** *(MANAGER)* — the sidebar search. `q` of 2+ characters matches
+claim / allocation references and taker names (`claims`, `allocations`), taker name / email / phone
+(`takers`, with claim + allocation counts) and batch references (`batches`, with `kgRemaining`;
+"Batch 3" searches for "3"). Up to 5 per group, newest first.
+
 ## 12. Reporting
 
 Read-only. Everything sums **`actualKg` from handovers only** — never requested/approved kg.
@@ -432,6 +438,23 @@ Read-only. Everything sums **`actualKg` from handovers only** — never requeste
 | `GET /reporting/top-takers?limit=10&from=&to=` | MANAGER | Who has collected the most |
 | `GET /reporting/pipeline` | MANAGER | Same object as the dashboard's `pipeline` |
 | `GET /reporting/waste-diary.csv?from=&to=` | MANAGER | CSV download, one row per handover. Needs the auth header, so fetch it with the token and save the blob (a plain `<a href>` won't send the token). |
+
+---
+
+## 12b. Pickup reviews — "Rate your pickup"
+
+The taker's survey after a collection (board "Taker · Rate your pickup"). One review per
+handover; individual takers only (bulk takers have no login). The taker only knows the
+claim, so the taker calls take a `claimId` and the server finds its handover.
+
+| Route | Role | Notes |
+|---|---|---|
+| `GET /reviews/claim/:claimId` | owner / MANAGER | Powers the page: `claim { id, reference, status }`, `handover { id, actualKg, handedOverAt }` (null until collected — the "Collected 0.3kg on 12 Sep" line), `canReview` (collected and not yet reviewed → show the form) and `review` (the one already sent, or null). |
+| `POST /reviews` | TAKER | `{ claimId, compostRating: 1–5, pickupEase?: SMOOTH \| CONFUSING \| HARD_TO_FIND, growing?: (HERBS \| VEGETABLES \| FLOWERS \| HOUSEPLANTS \| OTHER)[], note?: ≤1000 chars }`. Only `compostRating` is required. `NOT_COLLECTED` before the handover, `REVIEW_EXISTS` on a second send. |
+| `GET /reviews?batchId=&takerId=&rating=&withNote=true&from=&to=&page=&pageSize=` | any | Manager: all reviews, newest first. Taker: their own. Each row has the rating, answers, note, `taker`, `handover { reference, actualKg, handedOverAt }`, `claim` and `batch`. |
+| `GET /reviews/summary` (same filters) | MANAGER | `{ count, averageRating (1 dp or null), ratingCounts [1★…5★], pickupEase { SMOOTH, CONFUSING, HARD_TO_FIND }, growing { HERBS, … }, withNote }` |
+
+Labels for the chips: SMOOTH "Yes, smooth", CONFUSING "A bit confusing", HARD_TO_FIND "Hard to find".
 
 ---
 
@@ -471,6 +494,9 @@ Always safe to show `message`. Use `code` when the screen should react.
 | `HANDOVER_OVER_TOLERANCE` | More than 10% over approved | Recount, or approve more first |
 | `HANDOVER_EXISTS` | Already handed over | Open the existing one |
 | `HANDOVER_IN_FUTURE` | `handedOverAt` in the future | Fix the time |
+| **Reviews** | | |
+| `NOT_COLLECTED` | Rating a pickup that hasn't been handed over yet | Hide the form until `canReview` |
+| `REVIEW_EXISTS` | Rating the same pickup twice | Show the review already sent |
 | **Batches / allocations** | | |
 | `BATCH_NOT_TOPUPABLE` | Top-up on a closed/completed batch | — |
 | `BATCH_HAS_OPEN_ITEMS` | Completing with uncollected items | Show `message` |
@@ -483,7 +509,7 @@ Always safe to show `message`. Use `code` when the screen should react.
 
 - **Notifications** (announcements, reminders) — manual for the pilot (the manager WhatsApps
   people using the phone number on the claim).
-- **Later, only if time allows:** sidebar search, repeating slot series, reports CSV per section /
+- **Later, only if time allows:** repeating slot series, reports CSV per section /
   saved views, activity log. The database already has columns for some of these (`seriesId`) — ignore them in the UI for now.
 
 ---
@@ -493,6 +519,7 @@ Always safe to show `message`. Use `code` when the screen should react.
 ```
 HEALTH        GET    /health                      (public)
 AUTH          GET    /auth/me
+              PATCH  /auth/me/theme              (MANAGER)  light / dark switch
 
 TAKERS        POST   /takers/register             (TAKER)
               GET    /takers/me                   (TAKER)
@@ -560,7 +587,13 @@ HANDOVERS     POST   /handovers                   (MANAGER, multipart, photo req
               PATCH  /handovers/:id               (MANAGER)
 
 MANAGER       GET    /manager/dashboard           (MANAGER)
+              GET    /manager/search?q=           (MANAGER)
               GET    /reporting/analytics         (MANAGER)
+
+REVIEWS       GET    /reviews/claim/:claimId      (owner/MANAGER)  the Rate-your-pickup page
+              POST   /reviews                     (TAKER)
+              GET    /reviews
+              GET    /reviews/summary             (MANAGER)
 
 REPORTING     GET    /reporting/impact
               GET    /reporting/top-takers        (MANAGER)

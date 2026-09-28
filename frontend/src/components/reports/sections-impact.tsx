@@ -149,7 +149,7 @@ export function OverviewSection({
             {insights.map((i) => (
               <li
                 key={i.title}
-                className="flex gap-3 rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]"
+                className="flex gap-3 rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]"
               >
                 <Lightbulb
                   size={20}
@@ -196,7 +196,12 @@ export function ImpactSection({
 
   // Donut: top 3 groups + Other.
   const ranked = byGroup.map((g) => [g.group, g.kg] as [string, number]);
-  const colors = ["#4F7A3A", "#E0A030", "#3A7FC4", "#A0672E"];
+  const colors = [
+    "var(--color-leaf)",
+    "var(--color-chart-bulk)",
+    "var(--color-chart-claimed)",
+    "var(--color-chart-reserve)",
+  ];
   const head = ranked.slice(0, 3);
   const rest = ranked.slice(3);
   const slices = [
@@ -263,12 +268,12 @@ export function ImpactSection({
       >
         <Legend
           items={[
-            { label: "This period", color: "#4F7A3A" },
+            { label: "This period", color: "var(--color-leaf)" },
             ...(compare
               ? [
                   {
                     label: "Previous period (dashed)",
-                    color: "#2B2B24",
+                    color: "var(--color-ink)",
                     dashed: true,
                   },
                 ]
@@ -283,7 +288,9 @@ export function ImpactSection({
           <ColumnChart
             ariaLabel="kg diverted, this period vs previous"
             height={240}
-            series={[{ key: "kg", label: "This period", color: "#4F7A3A" }]}
+            series={[
+              { key: "kg", label: "This period", color: "var(--color-leaf)" },
+            ]}
             columns={buckets.map((b, i) => ({
               key: b.key,
               label:
@@ -433,10 +440,22 @@ export function ImpactSection({
 // ─── Supply & stock ───────────────────────────────────────────────────────────
 
 const SUPPLY_SERIES = [
-  { key: "reserve", label: "School reserve", color: "#A0672E" },
-  { key: "bulk", label: "Bulk allocations", color: "#E0A030" },
-  { key: "individual", label: "Individual claims collected", color: "#2F6E24" },
-  { key: "unclaimed", label: "Released or unclaimed", color: "#C9C5B8" },
+  {
+    key: "reserve",
+    label: "School reserve",
+    color: "var(--color-chart-reserve)",
+  },
+  { key: "bulk", label: "Bulk allocations", color: "var(--color-chart-bulk)" },
+  {
+    key: "individual",
+    label: "Individual claims collected",
+    color: "var(--color-chart-collected)",
+  },
+  {
+    key: "unclaimed",
+    label: "Released or unclaimed",
+    color: "var(--color-edge-soft)",
+  },
 ];
 
 export function SupplySection({
@@ -527,16 +546,20 @@ export function SupplySection({
         >
           <Legend
             items={[
-              { label: "Collected", color: "#2F6E24" },
-              { label: "Unused", color: "#DCE5CF" },
+              { label: "Collected", color: "var(--color-chart-collected)" },
+              { label: "Unused", color: "var(--color-sage)" },
             ]}
           />
           <ColumnChart
             ariaLabel="Generated vs collected per month"
             height={240}
             series={[
-              { key: "collected", label: "Collected", color: "#2F6E24" },
-              { key: "unused", label: "Unused", color: "#DCE5CF" },
+              {
+                key: "collected",
+                label: "Collected",
+                color: "var(--color-chart-collected)",
+              },
+              { key: "unused", label: "Unused", color: "var(--color-sage)" },
             ]}
             columns={data.generatedVsCollected.map((m) => ({
               key: m.month,

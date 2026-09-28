@@ -57,7 +57,7 @@ export function Sparkline({
     H - 3 - ((v - min) / span) * (H - 6),
   ]);
   const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const stroke = tone === "red" ? "#B4432F" : "#4F7A3A";
+  const stroke = tone === "red" ? "var(--color-error)" : "var(--color-leaf)";
   const desc = points
     .map(
       (p) =>
@@ -79,13 +79,13 @@ export function Sparkline({
       >
         <polygon
           points={`0,${H} ${line} ${W},${H}`}
-          fill={stroke}
+          style={{ fill: stroke }}
           opacity={0.12}
         />
         <polyline
           points={line}
           fill="none"
-          stroke={stroke}
+          style={{ stroke }}
           strokeWidth={2}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -95,7 +95,7 @@ export function Sparkline({
             cx={xy[xy.length - 1][0]}
             cy={xy[xy.length - 1][1]}
             r={3}
-            fill={stroke}
+            style={{ fill: stroke }}
           />
         )}
       </svg>
@@ -189,8 +189,8 @@ export function ColumnChart({
                 className={cn(
                   "absolute inset-x-0 h-px",
                   t === 0
-                    ? "bg-[rgba(107,107,94,0.4)]"
-                    : "bg-[rgba(107,107,94,0.18)]",
+                    ? "bg-[rgba(var(--rgb-hair),0.4)]"
+                    : "bg-[rgba(var(--rgb-hair),0.18)]",
                 )}
                 style={{ bottom: px(t) }}
               />
@@ -363,7 +363,7 @@ export function Donut({
             cy={size / 2}
             r={r}
             fill="none"
-            stroke="#ECE6D8"
+            style={{ stroke: "var(--color-track)" }}
             strokeWidth={20}
           />
           {total > 0 &&
@@ -376,7 +376,7 @@ export function Donut({
                   cy={size / 2}
                   r={r}
                   fill="none"
-                  stroke={s.color}
+                  style={{ stroke: s.color }}
                   strokeWidth={20}
                   strokeDasharray={`${Math.max(0, len - 1.5)} ${circ}`}
                   strokeDashoffset={-offset}
@@ -444,7 +444,7 @@ export function Donut({
 export function HBarList({
   rows,
   unit = "kg",
-  color = "#4F7A3A",
+  color = "var(--color-leaf)",
   ariaLabel,
   shareOfTotal = true,
 }: {
@@ -487,7 +487,7 @@ export function HBarList({
                 {r.sub && <span className="text-muted"> · {r.sub}</span>}
               </span>
             </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-[#ECE6D8] group-focus-visible:outline-3 group-focus-visible:outline-offset-2 group-focus-visible:outline-leaf">
+            <div className="h-2.5 overflow-hidden rounded-full bg-track group-focus-visible:outline-3 group-focus-visible:outline-offset-2 group-focus-visible:outline-leaf">
               <div
                 className="h-full rounded-full group-hover:brightness-110"
                 style={{

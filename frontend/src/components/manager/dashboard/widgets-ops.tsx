@@ -74,7 +74,7 @@ export function WeekStrip({
                 "group relative flex flex-col items-center gap-1 rounded-control px-1 py-2.5 text-center outline-none focus-visible:outline-3 focus-visible:outline-leaf",
                 isToday
                   ? "bg-leaf text-cream"
-                  : "bg-white shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]",
+                  : "bg-surface shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]",
               )}
             >
               <span
@@ -169,7 +169,7 @@ export function TodayAgenda({
             return (
               <li
                 key={b.id}
-                className="flex items-center gap-3 py-2 text-small shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+                className="flex items-center gap-3 py-2 text-small shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
               >
                 <span className="w-14 shrink-0 font-bold text-deep">
                   {formatClock(b.slot.startTime)}
@@ -240,7 +240,7 @@ export function PendingClaimsPreview({
             return (
               <li
                 key={c.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
               >
                 <div className="flex min-w-0 grow flex-col">
                   <span className="truncate text-small">
@@ -311,14 +311,18 @@ export function WeeklyTrend({
     >
       <Legend
         items={[
-          { label: "kg diverted per week", color: "#4F7A3A" },
-          { label: "Target", color: "#A0672E", dashed: true },
+          { label: "kg diverted per week", color: "var(--color-leaf)" },
+          {
+            label: "Target",
+            color: "var(--color-chart-reserve)",
+            dashed: true,
+          },
         ]}
       />
       <ColumnChart
         ariaLabel={`kg diverted per week, last ${weekly.length} weeks`}
         height={220}
-        series={[{ key: "kg", label: "Diverted", color: "#4F7A3A" }]}
+        series={[{ key: "kg", label: "Diverted", color: "var(--color-leaf)" }]}
         target={{
           value: targetKg,
           label: `Target ${formatKg(targetKg)}kg/week`,

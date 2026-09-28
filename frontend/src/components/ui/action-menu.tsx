@@ -70,7 +70,7 @@ export function ActionMenu({
                 key={item.label}
                 role="menuitem"
                 aria-disabled="true"
-                className="flex min-h-11 flex-col justify-center rounded-lg px-2.5 py-1 text-small text-[#A09E90]"
+                className="flex min-h-11 flex-col justify-center rounded-lg px-2.5 py-1 text-small text-faint"
               >
                 <span className="flex items-center gap-2.5">
                   {item.icon}

@@ -84,7 +84,7 @@ export function OverviewTab({
             {activity.map((a) => (
               <li
                 key={a.key}
-                className="flex items-center gap-3 py-2.5 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+                className="flex items-center gap-3 py-2.5 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sage text-deep">
                   {a.icon}
@@ -141,10 +141,10 @@ function BatchInfo({ batch }: { batch: BatchDetail }) {
       <dl className="m-0 grid grid-cols-[minmax(110px,170px)_minmax(0,1fr)] text-small">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">
-            <dt className="py-[11px] text-muted shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+            <dt className="py-[11px] text-muted shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
               {k}
             </dt>
-            <dd className="m-0 py-[11px] font-semibold shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+            <dd className="m-0 py-[11px] font-semibold shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
               {v}
             </dd>
           </div>

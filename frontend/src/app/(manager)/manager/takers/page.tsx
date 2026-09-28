@@ -77,7 +77,7 @@ type SheetState =
 export default function ManagerTakersPage() {
   return (
     <Suspense fallback={<TableSkeleton />}>
-      <Takers />
+      <Keyed />
     </Suspense>
   );
 }
@@ -228,7 +228,7 @@ function Takers() {
         key: "bulk",
         label: "Bulk partners",
         icon: <Truck size={18} weight="bold" />,
-        tone: "bg-[#EAD9C6] text-[#7A5A3C]",
+        tone: "bg-soil-tint text-soil",
       },
       {
         key: "suspended",
@@ -251,7 +251,7 @@ function Takers() {
           Takers
         </h1>
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex h-11 w-[300px] max-w-full items-center gap-2 rounded-control bg-white px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]">
+          <div className="flex h-11 w-[300px] max-w-full items-center gap-2 rounded-control bg-surface px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]">
             <MagnifyingGlass size={16} className="text-muted" aria-hidden />
             <input
               type="search"
@@ -290,7 +290,7 @@ function Takers() {
             className={cn(
               "flex items-center gap-3 rounded-[14px] bg-cream py-2.5 pl-2.5 pr-4 text-left shadow-card hover:bg-sage",
               tab === s.key &&
-                "shadow-[inset_0_0_0_2px_var(--color-leaf),0_1px_2px_rgba(47,74,36,0.06),0_8px_24px_rgba(47,74,36,0.08)]",
+                "shadow-[inset_0_0_0_2px_var(--color-leaf),0_1px_2px_rgba(var(--rgb-shade),0.06),0_8px_24px_rgba(var(--rgb-shade),0.08)]",
             )}
           >
             <span
@@ -314,7 +314,7 @@ function Takers() {
         <div
           role="tablist"
           aria-label="Taker groups"
-          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
         >
           {TABS.map((t) => (
             <button
@@ -334,9 +334,7 @@ function Takers() {
               <span
                 className={cn(
                   "h-5 min-w-[22px] rounded-full px-1.5 text-center text-xs font-bold leading-5",
-                  tab === t.key
-                    ? "bg-leaf text-cream"
-                    : "bg-[#ECE6D8] text-muted",
+                  tab === t.key ? "bg-leaf text-cream" : "bg-track text-muted",
                 )}
               >
                 {counts.status === "ready" ? counts.data[t.key] : "–"}
@@ -352,7 +350,7 @@ function Takers() {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="h-11 rounded-control bg-white px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
+                className="h-11 rounded-control bg-surface px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
               >
                 <option value="">All statuses</option>
                 {Object.entries(TAKER_STATUS).map(([k, v]) => (
@@ -370,7 +368,7 @@ function Takers() {
                   aria-label="Joined from"
                   value={joinedFrom}
                   onChange={(e) => setJoinedFrom(e.target.value)}
-                  className="h-11 rounded-control bg-white px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
+                  className="h-11 rounded-control bg-surface px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
                 />
                 <span className="text-muted">–</span>
                 <input
@@ -378,7 +376,7 @@ function Takers() {
                   aria-label="Joined until"
                   value={joinedTo}
                   onChange={(e) => setJoinedTo(e.target.value)}
-                  className="h-11 rounded-control bg-white px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
+                  className="h-11 rounded-control bg-surface px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
                 />
               </span>
             </div>
@@ -400,7 +398,7 @@ function Takers() {
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="h-11 rounded-control bg-white px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
+                className="h-11 rounded-control bg-surface px-3 text-small shadow-[inset_0_0_0_1px_var(--color-edge)]"
               >
                 <option value="">All categories</option>
                 {Object.entries(TAKER_CATEGORY_LABEL).map(([k, v]) => (
@@ -495,7 +493,7 @@ function Takers() {
                 {ordered.map((t) => (
                   <li
                     key={t.id}
-                    className="flex flex-col gap-3 rounded-control bg-white p-4 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]"
+                    className="flex flex-col gap-3 rounded-control bg-surface p-4 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]"
                   >
                     <div className="flex items-start gap-3">
                       <input
@@ -539,7 +537,7 @@ function Takers() {
                       </div>
                     </div>
                     {t.intendedUse && (
-                      <div className="rounded-control bg-[#F4EFE4] p-3 text-small">
+                      <div className="rounded-control bg-well p-3 text-small">
                         <span className="text-xs font-bold text-muted">
                           Intended use
                         </span>
@@ -1010,7 +1008,7 @@ function TableSkeleton() {
         <div
           key={i}
           aria-hidden
-          className="flex items-center gap-4 py-2 shadow-[inset_0_1px_0_rgba(107,107,94,0.14)]"
+          className="flex items-center gap-4 py-2 shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14)]"
         >
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-5 w-28" />
@@ -1021,4 +1019,10 @@ function TableSkeleton() {
       ))}
     </div>
   );
+}
+
+/** Remount when ?taker= changes, so opening another one from the sidebar search selects it. */
+function Keyed() {
+  const params = useSearchParams();
+  return <Takers key={params.get("taker") ?? ""} />;
 }

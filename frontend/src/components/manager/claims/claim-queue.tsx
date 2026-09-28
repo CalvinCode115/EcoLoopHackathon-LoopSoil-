@@ -90,7 +90,7 @@ export function ClaimQueue({
           <button
             type="button"
             onClick={bulkBar.onApprove}
-            className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-leaf px-3.5 text-small font-bold text-cream hover:bg-[#5d8b46]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-leaf px-3.5 text-small font-bold text-cream hover:bg-leaf-hover"
           >
             <CheckCircle size={16} weight="bold" aria-hidden />
             Approve all
@@ -104,7 +104,7 @@ export function ClaimQueue({
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-3 px-4 py-3 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+        <div className="flex items-center gap-3 px-4 py-3 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
           {selectable && claims.length > 0 && (
             <BoxCheck
               checked={allChecked}
@@ -138,8 +138,8 @@ export function ClaimQueue({
                 className={cn(
                   "relative flex cursor-pointer items-start gap-3 px-4 py-3.5 outline-none focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-leaf",
                   current
-                    ? "bg-[#EEF3E6] shadow-[inset_0_-1px_0_rgba(107,107,94,0.14),inset_4px_0_0_var(--color-leaf)]"
-                    : "shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)] hover:bg-row-hover",
+                    ? "bg-leaf-tint shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14),inset_4px_0_0_var(--color-leaf)]"
+                    : "shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)] hover:bg-row-hover",
                 )}
               >
                 {selectable && (
@@ -186,7 +186,7 @@ export function ClaimQueue({
                         "inline-flex h-6 min-w-0 items-center gap-1 truncate rounded-full px-2 text-xs font-bold",
                         meta.tone === "amber" && "bg-amber-tint text-amber-ink",
                         meta.tone === "red" && "bg-danger-tint text-danger-ink",
-                        meta.tone === "grey" && "bg-[#ECE6D8] text-muted",
+                        meta.tone === "grey" && "bg-track text-muted",
                       )}
                     >
                       <Clock
@@ -234,7 +234,7 @@ function BoxCheck({
           "flex size-[22px] items-center justify-center rounded-md peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-leaf",
           checked
             ? "bg-leaf text-cream"
-            : "bg-white shadow-[inset_0_0_0_1.5px_var(--color-edge)]",
+            : "bg-surface shadow-[inset_0_0_0_1.5px_var(--color-edge)]",
         )}
       >
         {checked && <Check size={14} weight="bold" />}

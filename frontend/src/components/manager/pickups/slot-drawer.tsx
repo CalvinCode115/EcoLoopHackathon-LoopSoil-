@@ -103,7 +103,7 @@ export function SlotDrawer({
         tabIndex={-1}
         className="absolute inset-y-0 right-0 flex w-full max-w-[440px] flex-col bg-cream shadow-photo outline-none"
       >
-        <div className="flex items-start justify-between gap-3 px-6 pb-4 pt-5 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+        <div className="flex items-start justify-between gap-3 px-6 pb-4 pt-5 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
           <div className="flex flex-col gap-1">
             <span className="text-xs font-bold uppercase tracking-[0.08em] text-muted">
               Slot details
@@ -156,7 +156,7 @@ export function SlotDrawer({
             />
           </div>
           {slot.note && (
-            <p className="rounded-control bg-white px-3.5 py-2.5 text-small">
+            <p className="rounded-control bg-surface px-3.5 py-2.5 text-small">
               {slot.note}
             </p>
           )}
@@ -169,7 +169,7 @@ export function SlotDrawer({
               Couldn’t load the bookings for this slot.
             </p>
           ) : ordered.length === 0 ? (
-            <p className="rounded-control bg-white px-3.5 py-3 text-small text-muted">
+            <p className="rounded-control bg-surface px-3.5 py-3 text-small text-muted">
               Nobody has booked this slot yet.
             </p>
           ) : (
@@ -180,7 +180,7 @@ export function SlotDrawer({
                 return (
                   <li
                     key={b.id}
-                    className="flex flex-col gap-2.5 rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]"
+                    className="flex flex-col gap-2.5 rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex min-w-0 flex-col gap-0.5">
@@ -236,7 +236,7 @@ export function SlotDrawer({
         </div>
 
         {!cancelled && (
-          <div className="flex flex-wrap items-center gap-2.5 px-6 py-4 shadow-[inset_0_1px_0_rgba(107,107,94,0.14)]">
+          <div className="flex flex-wrap items-center gap-2.5 px-6 py-4 shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14)]">
             <Button
               variant="secondary"
               size="sm"

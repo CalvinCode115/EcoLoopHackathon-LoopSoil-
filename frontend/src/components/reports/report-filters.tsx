@@ -26,7 +26,7 @@ const RANGE_OPTIONS: { key: RangePreset; label: string }[] = [
 ];
 
 const selectClass =
-  "h-9 cursor-pointer rounded-[9px] border-none bg-white pl-2.5 pr-7 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf)]";
+  "h-9 cursor-pointer rounded-[9px] border-none bg-surface pl-2.5 pr-7 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf)]";
 
 /**
  * Reports global filter bar (sticky): date range, compare, batch, taker type, category,
@@ -104,7 +104,7 @@ export function ReportFilterBar({
   return (
     <div
       aria-label="Filters"
-      className="sticky top-[72px] z-20 -mx-4 flex flex-col gap-3 bg-beige/95 px-4 py-3 shadow-[0_1px_0_rgba(107,107,94,0.14)] backdrop-blur-sm md:-mx-8 md:px-8 print:hidden"
+      className="sticky top-[72px] z-20 -mx-4 flex flex-col gap-3 bg-beige/95 px-4 py-3 shadow-[0_1px_0_rgba(var(--rgb-hair),0.14)] backdrop-blur-sm md:-mx-8 md:px-8 print:hidden"
     >
       <div className="flex flex-wrap items-end gap-3">
         <RangePicker

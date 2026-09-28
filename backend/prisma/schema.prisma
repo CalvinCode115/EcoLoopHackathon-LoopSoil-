@@ -106,20 +106,43 @@ enum BookingStatus {
   CANCELLED // released before pickup — frees capacity
 }
 
+/// Manager UI colour mode — saved per account so it follows them across log-ins and devices.
+enum ThemePreference {
+  LIGHT
+  DARK
+}
+
+/// "Was pickup easy?" on the Rate-your-pickup survey.
+enum PickupEase {
+  SMOOTH // "Yes, smooth"
+  CONFUSING // "A bit confusing"
+  HARD_TO_FIND // "Hard to find"
+}
+
+/// "What will you grow?" chips — a taker can pick several.
+enum GrowingPlan {
+  HERBS
+  VEGETABLES
+  FLOWERS
+  HOUSEPLANTS
+  OTHER
+}
+
 // ─────────────────────────────────────────────
 // MODELS
 // ─────────────────────────────────────────────
 
 model User {
-  id        String     @id @default(uuid())
-  authId    String     @unique // Supabase Auth user id — the login seam
-  email     String     @unique // login identity + contact
+  id        String          @id @default(uuid())
+  authId    String          @unique // Supabase Auth user id — the login seam
+  email     String          @unique // login identity + contact
   phone     String? // primary contact for login users (call / WhatsApp)
   name      String
-  role      UserRole   @default(TAKER)
-  status    UserStatus @default(ACTIVE)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  role      UserRole        @default(TAKER)
+  status    UserStatus      @default(ACTIVE)
+  theme     ThemePreference @default(LIGHT) // manager light/dark switch
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   taker         Taker?     @relation("UserTaker") // individual takers only
   batchesLogged Batch[]    @relation("BatchCreatedBy")
@@ -161,6 +184,7 @@ model Taker {
 
   claims      Claim[]
   allocations Allocation[]
+  reviews     PickupReview[]
 }
 
 model Batch {
@@ -318,8 +342,32 @@ model Handover {
   note           String?
   undoneAt       DateTime? // set by the 10-second undo; a soft cancel, row is kept for audit
 
+  review PickupReview?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// The taker's "Rate your pickup" survey — one per handover, only for a handover that
+/// actually happened (not undone). Individual takers only: bulk takers have no login.
+model PickupReview {
+  id String @id @default(uuid())
+
+  handoverId String   @unique
+  handover   Handover @relation(fields: [handoverId], references: [id])
+
+  takerId String // denormalised from handover → booking → claim, for per-taker queries
+  taker   Taker  @relation(fields: [takerId], references: [id])
+
+  compostRating Int // "How was the compost?" 1–5, required
+  pickupEase    PickupEase? // "Was pickup easy?"
+  growing       GrowingPlan[] // "What will you grow?" — multi-select, may be empty
+  note          String? // "Anything to tell the SUSS team?"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([takerId])
 }
 
 /// Audit trail for how a batch's totalKg grew after the initial log (manager tops up

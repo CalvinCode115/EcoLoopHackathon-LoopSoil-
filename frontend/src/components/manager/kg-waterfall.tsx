@@ -69,8 +69,8 @@ export function KgWaterfall({ steps }: { steps: WaterfallStep[] }) {
                 className={cn(
                   "absolute inset-x-0 h-px",
                   t === 0
-                    ? "bg-[rgba(107,107,94,0.4)]"
-                    : "bg-[rgba(107,107,94,0.18)]",
+                    ? "bg-[rgba(var(--rgb-hair),0.4)]"
+                    : "bg-[rgba(var(--rgb-hair),0.18)]",
                 )}
                 style={{ bottom: px(t) }}
               />
@@ -117,7 +117,7 @@ export function KgWaterfall({ steps }: { steps: WaterfallStep[] }) {
                   {i < bars.length - 1 && (
                     <span
                       aria-hidden
-                      className="absolute left-[calc(50%+min(36px,35%))] w-[calc(100%-min(72px,70%))] border-t-[1.5px] border-dashed border-[rgba(107,107,94,0.5)]"
+                      className="absolute left-[calc(50%+min(36px,35%))] w-[calc(100%-min(72px,70%))] border-t-[1.5px] border-dashed border-[rgba(var(--rgb-hair),0.5)]"
                       style={{ bottom: px(b.after) }}
                     />
                   )}
@@ -193,7 +193,7 @@ export function batchWaterfallSteps(input: {
       label: "Total harvested",
       kg: pool.totalKg,
       kind: "total",
-      color: "#2F4A24",
+      color: "var(--color-deep)",
       detail: input.totalDetail,
     },
     {
@@ -214,7 +214,7 @@ export function batchWaterfallSteps(input: {
       label: "Public pool",
       kg: pool.publicPoolKg,
       kind: "total",
-      color: "#4F7A3A",
+      color: "var(--color-leaf)",
       detail: "Open to individual takers",
     },
     {

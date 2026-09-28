@@ -100,7 +100,11 @@ export default function RegisterPage() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password: values.password,
-        options: { data: { full_name: profile.name, phone: profile.phone } },
+        options: {
+          data: { full_name: profile.name, phone: profile.phone },
+          // Only used if "Confirm email" is on in Supabase: the link lands on Sign Up Complete.
+          emailRedirectTo: `${window.location.origin}/register/complete?email=${encodeURIComponent(email)}`,
+        },
       });
       if (error) {
         if (/already registered/i.test(error.message)) {

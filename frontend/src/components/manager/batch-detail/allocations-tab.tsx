@@ -417,7 +417,7 @@ function AllocationSheet({
             </SelectField>
           )}
           {taker && (
-            <div className="flex flex-col gap-2 rounded-control bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.3)]">
+            <div className="flex flex-col gap-2 rounded-control bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.3)]">
               <div className="flex flex-wrap items-center gap-2 text-[13px]">
                 {taker.category && (
                   <Chip tone="soil">

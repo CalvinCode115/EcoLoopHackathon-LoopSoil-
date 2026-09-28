@@ -133,16 +133,16 @@ export function FunnelSection({
                   className="grid items-center gap-3 md:grid-cols-[110px_minmax(0,1fr)_220px]"
                 >
                   <strong className="text-small">{s.key}</strong>
-                  <div className="h-10 overflow-hidden rounded-control bg-[#ECE6D8]">
+                  <div className="h-10 overflow-hidden rounded-control bg-track">
                     <div
                       className="flex h-full items-center rounded-control px-3 text-small font-bold text-cream"
                       style={{
                         width: `${Math.max(6, (s.count / max) * 100)}%`,
                         background: [
-                          "#2F4A24",
-                          "#4F7A3A",
-                          "#6E9A52",
-                          "#7FB858",
+                          "var(--color-deep)",
+                          "var(--color-leaf)",
+                          "var(--color-chart-mid)",
+                          "var(--color-chart-remaining)",
                         ][i],
                       }}
                     >
@@ -185,7 +185,7 @@ export function FunnelSection({
           <HBarList
             ariaLabel="Rejection reasons"
             unit=""
-            color="#B4432F"
+            color="var(--color-error)"
             rows={rej.rows}
           />
           <h4 className="m-0 mt-2 text-small font-bold">
@@ -194,7 +194,7 @@ export function FunnelSection({
           <HBarList
             ariaLabel="Cancellation reasons"
             unit=""
-            color="#A0672E"
+            color="var(--color-chart-reserve)"
             rows={can.rows}
           />
         </ChartCard>
@@ -256,7 +256,7 @@ export function FunnelSection({
             ariaLabel="Claims by size"
             height={170}
             unit=""
-            series={[{ key: "n", label: "Claims", color: "#4F7A3A" }]}
+            series={[{ key: "n", label: "Claims", color: "var(--color-leaf)" }]}
             columns={[
               {
                 key: "s",
@@ -414,7 +414,7 @@ export function PickupsSection({
                             className={cn(
                               "group relative h-10 rounded-md text-center font-bold outline-none focus-visible:outline-3 focus-visible:outline-leaf",
                               pct == null
-                                ? "bg-[#F4EFE4] text-muted"
+                                ? "bg-well text-muted"
                                 : pct >= 60
                                   ? "text-cream"
                                   : "text-deep",
@@ -423,7 +423,7 @@ export function PickupsSection({
                               pct == null
                                 ? undefined
                                 : {
-                                    background: `rgba(79,122,58,${0.12 + (pct / 100) * 0.88})`,
+                                    background: `rgba(var(--rgb-leaf),${0.12 + (pct / 100) * 0.88})`,
                                   }
                             }
                           >
@@ -445,12 +445,12 @@ export function PickupsSection({
               </table>
               <p className="mt-2 flex items-center gap-2 text-xs text-muted">
                 <span
-                  className="h-3 w-16 rounded-sm bg-gradient-to-r from-[rgba(79,122,58,0.12)] to-leaf"
+                  className="h-3 w-16 rounded-sm bg-gradient-to-r from-[rgba(var(--rgb-leaf),0.12)] to-leaf"
                   aria-hidden
                 />{" "}
                 0% → 100% booked ·{" "}
                 <span
-                  className="inline-block size-3 rounded-sm bg-[#F4EFE4]"
+                  className="inline-block size-3 rounded-sm bg-well"
                   aria-hidden
                 />{" "}
                 No slots
@@ -470,8 +470,8 @@ export function PickupsSection({
         >
           <Legend
             items={[
-              { label: "Collected", color: "#4F7A3A" },
-              { label: "No-shows", color: "#B4432F" },
+              { label: "Collected", color: "var(--color-leaf)" },
+              { label: "No-shows", color: "var(--color-error)" },
             ]}
           />
           {p.weekly.length === 0 ? (
@@ -484,8 +484,16 @@ export function PickupsSection({
               height={200}
               unit=""
               series={[
-                { key: "collected", label: "Collected", color: "#4F7A3A" },
-                { key: "noShows", label: "No-shows", color: "#B4432F" },
+                {
+                  key: "collected",
+                  label: "Collected",
+                  color: "var(--color-leaf)",
+                },
+                {
+                  key: "noShows",
+                  label: "No-shows",
+                  color: "var(--color-error)",
+                },
               ]}
               columns={p.weekly.map((w) => ({
                 key: w.weekStart,
@@ -559,8 +567,8 @@ export function TakersSection({
         >
           <Legend
             items={[
-              { label: "Individual", color: "#4F7A3A" },
-              { label: "Bulk", color: "#E0A030" },
+              { label: "Individual", color: "var(--color-leaf)" },
+              { label: "Bulk", color: "var(--color-chart-bulk)" },
             ]}
           />
           <ColumnChart
@@ -568,8 +576,12 @@ export function TakersSection({
             height={200}
             unit=""
             series={[
-              { key: "individual", label: "Individual", color: "#4F7A3A" },
-              { key: "bulk", label: "Bulk", color: "#E0A030" },
+              {
+                key: "individual",
+                label: "Individual",
+                color: "var(--color-leaf)",
+              },
+              { key: "bulk", label: "Bulk", color: "var(--color-chart-bulk)" },
             ]}
             columns={t.newPerMonth.map((m) => ({
               key: m.month,

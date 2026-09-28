@@ -292,7 +292,7 @@ function Handover() {
 
   const list = (
     <div className="flex flex-col">
-      <div className="sticky top-[72px] z-[15] -mx-4 flex flex-col gap-2.5 bg-beige px-4 py-3 shadow-[0_1px_0_rgba(107,107,94,0.14)] md:-mx-0 md:px-0">
+      <div className="sticky top-[72px] z-[15] -mx-4 flex flex-col gap-2.5 bg-beige px-4 py-3 shadow-[0_1px_0_rgba(var(--rgb-hair),0.14)] md:-mx-0 md:px-0">
         <form
           role="search"
           onSubmit={(e) => {
@@ -303,7 +303,7 @@ function Handover() {
           <label htmlFor="h-q" className="sr-only">
             Find a pickup
           </label>
-          <div className="flex h-[52px] items-center gap-2.5 rounded-[14px] bg-white px-3.5 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]">
+          <div className="flex h-[52px] items-center gap-2.5 rounded-[14px] bg-surface px-3.5 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]">
             <MagnifyingGlass size={20} className="text-muted" aria-hidden />
             <input
               ref={searchRef}
@@ -658,7 +658,7 @@ function ListRowsSkeleton() {
           {Array.from({ length: n }, (_, j) => (
             <div
               key={j}
-              className="flex items-center gap-3 rounded-[14px] bg-white p-3.5 shadow-[inset_0_0_0_1px_rgba(143,142,128,0.25)]"
+              className="flex items-center gap-3 rounded-[14px] bg-surface p-3.5 shadow-[inset_0_0_0_1px_rgba(var(--rgb-edge),0.25)]"
             >
               <div className="flex grow flex-col gap-2">
                 <Skeleton className="h-4 w-[60%]" />

@@ -235,7 +235,7 @@ function BatchesList() {
             className={cn(
               "flex items-center gap-3.5 rounded-[14px] bg-cream px-4 py-3.5 text-left shadow-card hover:bg-sage",
               status === s &&
-                "shadow-[inset_0_0_0_2px_var(--color-leaf),0_1px_2px_rgba(47,74,36,0.06),0_8px_24px_rgba(47,74,36,0.08)]",
+                "shadow-[inset_0_0_0_2px_var(--color-leaf),0_1px_2px_rgba(var(--rgb-shade),0.06),0_8px_24px_rgba(var(--rgb-shade),0.08)]",
             )}
           >
             <span className="font-display text-[30px] font-semibold leading-[34px] text-deep">
@@ -253,7 +253,7 @@ function BatchesList() {
         <div
           role="tablist"
           aria-label="Batch status"
-          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]"
+          className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]"
         >
           {(["ALL", ...STATUSES] as const).map((s) => {
             const selected = status === s;
@@ -278,7 +278,7 @@ function BatchesList() {
                 <span
                   className={cn(
                     "h-5 min-w-[22px] rounded-full px-1.5 text-center text-xs font-bold leading-5",
-                    selected ? "bg-leaf text-cream" : "bg-[#ECE6D8] text-muted",
+                    selected ? "bg-leaf text-cream" : "bg-track text-muted",
                   )}
                 >
                   {load.kind === "ready" ? counts[s] : "–"}
@@ -305,7 +305,7 @@ function BatchesList() {
             <label htmlFor="b-q" className="text-[13px] font-semibold">
               Search
             </label>
-            <div className="flex h-11 items-center gap-2 rounded-control bg-white px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]">
+            <div className="flex h-11 items-center gap-2 rounded-control bg-surface px-3 shadow-[inset_0_0_0_1px_var(--color-edge)] focus-within:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]">
               <MagnifyingGlass size={16} className="text-muted" aria-hidden />
               <input
                 id="b-q"
@@ -410,7 +410,7 @@ function BatchesList() {
                   {filtered.slice(0, shown).map((b) => (
                     <tr
                       key={b.id}
-                      className="shadow-[inset_0_1px_0_rgba(107,107,94,0.14)] hover:bg-row-hover"
+                      className="shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14)] hover:bg-row-hover"
                     >
                       <td className="px-3 py-3.5 align-middle">
                         <Link
@@ -515,7 +515,7 @@ function DateInput({
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-11 rounded-control bg-white px-3 text-small text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(79,122,58,0.25)]"
+      className="h-11 rounded-control bg-surface px-3 text-small text-ink shadow-[inset_0_0_0_1px_var(--color-edge)] outline-none focus:shadow-[inset_0_0_0_2px_var(--color-leaf),0_0_0_4px_rgba(var(--rgb-leaf),0.25)]"
     />
   );
 }
@@ -551,7 +551,7 @@ function TableSkeleton() {
         <div
           key={i}
           aria-hidden
-          className="flex items-center gap-4 py-2 shadow-[inset_0_1px_0_rgba(107,107,94,0.14)]"
+          className="flex items-center gap-4 py-2 shadow-[inset_0_1px_0_rgba(var(--rgb-hair),0.14)]"
         >
           <Skeleton className="h-5 w-24" />
           <Skeleton className="h-5 w-24" />

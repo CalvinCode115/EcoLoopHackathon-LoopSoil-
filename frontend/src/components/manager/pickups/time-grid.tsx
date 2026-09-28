@@ -147,7 +147,7 @@ export function TimeGrid({
             </div>
           ))}
         </div>
-        <div className="relative flex pl-12 shadow-[inset_0_-1px_0_rgba(107,107,94,0.14)]">
+        <div className="relative flex pl-12 shadow-[inset_0_-1px_0_rgba(var(--rgb-hair),0.14)]">
           <span className="absolute left-0 w-11 pt-1.5 text-right text-[10px] text-muted">
             All day
           </span>
@@ -156,7 +156,7 @@ export function TimeGrid({
               key={d}
               className={cn(
                 "flex min-h-[26px] min-w-0 flex-1 flex-col gap-0.5 p-[3px]",
-                d === today && "bg-[#EEF3E6]",
+                d === today && "bg-leaf-tint",
               )}
             >
               {(events.get(d) ?? []).map((ev) => (
@@ -188,7 +188,7 @@ export function TimeGrid({
             <div
               key={h}
               aria-hidden
-              className="pointer-events-none absolute inset-x-0 h-px bg-[rgba(107,107,94,0.14)]"
+              className="pointer-events-none absolute inset-x-0 h-px bg-[rgba(var(--rgb-hair),0.14)]"
               style={{ top: i * HOUR_PX }}
             />
           ))}
@@ -212,8 +212,8 @@ export function TimeGrid({
                   );
                 }}
                 className={cn(
-                  "relative min-w-0 flex-1 cursor-copy border-l border-[rgba(107,107,94,0.1)]",
-                  d === today && "bg-[#EEF3E6]/60",
+                  "relative min-w-0 flex-1 cursor-copy border-l border-[rgba(var(--rgb-hair),0.1)]",
+                  d === today && "bg-leaf-tint/60",
                   dragging && "bg-sage/30",
                 )}
               >
@@ -240,7 +240,7 @@ export function TimeGrid({
                       onClick={() => onOpen(s)}
                       aria-label={`${blockTime(s)}, ${s.effectiveLocation ?? "no location"}, ${s.bookedCount} of ${s.capacity} booked, ${SLOT_STATE[state].label}`}
                       className={cn(
-                        "group absolute flex flex-col gap-[3px] overflow-visible rounded-[10px] px-2 py-1.5 text-left hover:shadow-[0_0_0_2px_var(--color-deep),0_1px_2px_rgba(47,74,36,0.06),0_8px_24px_rgba(47,74,36,0.08)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-leaf",
+                        "group absolute flex flex-col gap-[3px] overflow-visible rounded-[10px] px-2 py-1.5 text-left hover:shadow-[0_0_0_2px_var(--color-deep),0_1px_2px_rgba(var(--rgb-shade),0.06),0_8px_24px_rgba(var(--rgb-shade),0.08)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-leaf",
                         SLOT_STATE[state].block,
                         past && "opacity-70",
                         dragging === s.id && "opacity-40",
@@ -311,7 +311,7 @@ export function TimeGrid({
                               </span>
                             );
                           })}
-                          <span className="mt-1 flex justify-between border-t border-[rgba(107,107,94,0.2)] pt-1.5 text-muted">
+                          <span className="mt-1 flex justify-between border-t border-[rgba(var(--rgb-hair),0.2)] pt-1.5 text-muted">
                             Total expected{" "}
                             <strong className="text-ink">
                               {expectedKg(bookings)}kg
