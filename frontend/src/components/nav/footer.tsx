@@ -25,7 +25,7 @@ export function Footer() {
       <div className="page-container flex flex-col gap-12 pb-8 pt-16">
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr] lg:gap-12">
           <div className="flex max-w-[360px] flex-col gap-4 md:col-span-2 lg:col-span-1">
-            <LoopSoilLogo onDark className="h-11 w-[140px]" />
+            <LoopSoilLogo onDark className="h-9" />
             <p className="font-display text-[22px] leading-[30px] text-cream">
               Closing the loop from campus waste to community soil.
             </p>

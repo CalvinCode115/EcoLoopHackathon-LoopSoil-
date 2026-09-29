@@ -67,7 +67,7 @@ export function AuthCard({
       className="flex flex-col gap-6 rounded-card bg-cream p-6 shadow-photo md:p-8 lg:p-10"
     >
       <div className="flex flex-col items-center gap-3 text-center">
-        <LoopSoilLogo className="w-[132px]" />
+        <LoopSoilLogo className="h-10" />
         <div className="flex flex-col gap-1">
           <h1
             id="auth-title"

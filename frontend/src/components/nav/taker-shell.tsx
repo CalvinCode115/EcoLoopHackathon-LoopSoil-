@@ -15,8 +15,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { IconLeaf } from "@/components/brand/icons";
-import { LogoLockup } from "@/components/brand/logo";
+import { LogoLockup, LoopSoilMark } from "@/components/brand/logo";
 import { Banner } from "@/components/ui/banner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-provider";
@@ -159,10 +158,8 @@ export function TakerShell({ children }: { children: ReactNode }) {
               <span className="hidden md:block">
                 <LogoLockup />
               </span>
-              {/* Mobile: the leaf mark alone, in a dashed placeholder slot. */}
-              <span className="flex size-10 items-center justify-center rounded-control bg-sage text-deep outline-[1.5px] -outline-offset-[1.5px] outline-dashed outline-deep/35 md:hidden">
-                <IconLeaf size={20} />
-              </span>
+              {/* Mobile: the mark alone. */}
+              <LoopSoilMark className="size-10 md:hidden" />
             </Link>
             <span
               aria-hidden

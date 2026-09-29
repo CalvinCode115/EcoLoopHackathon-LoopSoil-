@@ -184,7 +184,7 @@ export function ManagerShell({ children }: { children: ReactNode }) {
             )}
           >
             <span className={cn(collapsed && "lg:hidden")}>
-              <LoopSoilLogo onNav className="w-[132px]" />
+              <LoopSoilLogo onNav />
             </span>
             <span className="lg:hidden">
               <IconButton
