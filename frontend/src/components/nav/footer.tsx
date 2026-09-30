@@ -6,6 +6,7 @@ import { LoopSoilLogo } from "@/components/brand/logo";
 const QUICK_LINKS = [
   { href: "/", label: "Home" },
   { href: "/#background", label: "Background" },
+  { href: "/awareness", label: "Awareness" },
   { href: "/tutorial", label: "Tutorial" },
   { href: "/login", label: "Log In" },
 ];

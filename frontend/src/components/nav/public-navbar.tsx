@@ -16,6 +16,7 @@ import { cn } from "@/lib/cn";
 const LINKS = [
   { href: "/", label: "Home" },
   { href: "/#background", label: "Background" },
+  { href: "/awareness", label: "Awareness" },
   { href: "/tutorial", label: "Tutorial" },
 ];
 

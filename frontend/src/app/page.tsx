@@ -195,20 +195,17 @@ const PROBLEMS = [
   "There’s no simple way to claim and collect it.",
 ];
 
-/**
- * The stat values are "[X]" placeholders in the design itself — the real figures
- * haven't been supplied yet.
- */
+/** Pilot figures supplied by the team (the design had "[X]" placeholders). */
 const STATS = [
   {
     icon: <IconBag size={24} />,
-    value: "[X] kg",
+    value: "20 kg",
     label: "compost per fortnight",
   },
-  { icon: <IconDrop size={24} />, value: "pH [X]", label: "healthy quality" },
+  { icon: <IconDrop size={24} />, value: "pH 6.7", label: "healthy quality" },
   {
     icon: <IconBin size={24} />,
-    value: "[X] tonnes",
+    value: "649,000 tonnes",
     label: "food waste in Singapore yearly",
   },
 ];
