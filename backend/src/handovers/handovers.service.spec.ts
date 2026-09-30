@@ -91,6 +91,10 @@ function setup(
           handedOverBy: { id: manager.id, name: 'Manager' },
         }),
       ),
+      // create() reloads the saved row (with its detail) after the commit.
+      findUniqueOrThrow: jest.fn(
+        (): unknown => prisma.handover.create.mock.results.at(-1)?.value,
+      ),
       update: jest
         .fn()
         .mockImplementation(({ data }) =>

@@ -242,8 +242,9 @@ export class HandoversService {
       photo,
     );
 
+    let created: { id: string };
     try {
-      const row = await this.prisma.$transaction(async (tx) => {
+      created = await this.prisma.$transaction(async (tx) => {
         // Re-validate inside the transaction — state may have moved since preflight.
         const target = await resolveTarget(tx, dto);
         const bookingId =
@@ -274,6 +275,8 @@ export class HandoversService {
         }
 
         const reference = await nextHandoverReference(tx, handedOverAt);
+        // Only the id here: loading the full detail (booking → slot, claim, taker, batch)
+        // is several more round trips to the database, so it happens after the commit.
         return tx.handover.create({
           data: {
             reference,
@@ -288,14 +291,21 @@ export class HandoversService {
             takerConfirmed: dto.takerConfirmed ?? false,
             note: dto.note,
           },
-          include: handoverInclude,
+          select: { id: true },
         });
       });
-      return (await this.present([row]))[0];
     } catch (err) {
+      // Nothing was saved, so the uploaded photo is an orphan — remove it.
       await this.storage.removeHandoverPhoto(photoPath);
       throw err;
     }
+
+    // Committed. Outside the try: a failure here must never delete a saved handover's photo.
+    const saved = await this.prisma.handover.findUniqueOrThrow({
+      where: { id: created.id },
+      include: handoverInclude,
+    });
+    return (await this.present([saved]))[0];
   }
 
   /**

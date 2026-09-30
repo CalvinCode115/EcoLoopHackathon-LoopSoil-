@@ -29,7 +29,13 @@ export class PrismaService
         'DATABASE_URL is not set — copy env.example to backend/.env and fill it in',
       );
     }
-    super({ adapter: new PrismaPg({ connectionString }) });
+    super({
+      adapter: new PrismaPg({ connectionString }),
+      // The database is in Sydney and the API in Singapore (~100 ms per query), so a
+      // multi-step transaction like a handover can pass Prisma's 5 s default and be
+      // rolled back at commit. Give transactions room; they still fail fast on errors.
+      transactionOptions: { maxWait: 10_000, timeout: 20_000 },
+    });
   }
 
   async onModuleInit(): Promise<void> {
