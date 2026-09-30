@@ -30,7 +30,18 @@ export class PrismaService
       );
     }
     super({
-      adapter: new PrismaPg({ connectionString }),
+      adapter: new PrismaPg({
+        connectionString,
+        // Opening a connection to the Sydney pooler costs ~1 s (vs ~0.1 s per query), and
+        // pg closes idle connections after 10 s by default — so after any short pause the
+        // next burst of requests (e.g. the dashboard's ~12) paid that 1 s again. Keep a
+        // few warm for good and the rest for 5 min.
+        max: 10,
+        min: 4, // never closed for idleness
+        idleTimeoutMillis: 5 * 60_000,
+        keepAlive: true, // stop idle TCP connections being silently dropped
+        connectionTimeoutMillis: 15_000, // fail with an error rather than hang
+      }),
       // The database is in Sydney and the API in Singapore (~100 ms per query), so a
       // multi-step transaction like a handover can pass Prisma's 5 s default and be
       // rolled back at commit. Give transactions room; they still fail fast on errors.
